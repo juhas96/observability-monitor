@@ -1,5 +1,32 @@
 # Project History
 
+### 2026-07-03 — Revert dev-run resolver experiment and document Glaze import
+- **Goal:** User asked to revert the runtime/tooling changes made while trying to run the app, leaving only the README and project group feature changes.
+- **What was done:** Restored `glaze.ts` and `tsconfig.json` to the normal SDK path shape, removed the temporary `.glaze-sdk` ignore/symlink behavior, removed the `sonner` dependency added for Vite dev scanning, and adjusted `README.md` to tell developers to copy/import `Observability Monitor.glaze` from the repo root into the Glaze macOS app before running.
+- **Key decisions:** Kept project group changes and the README; did not keep the per-user SDK resolver hook because app import via `Observability Monitor.glaze` is the intended setup flow.
+- **UI elements:** none.
+- **Backend elements:** tooling/docs cleanup only.
+- **Corrections/Lessons Learned:** The developer setup should be documented around importing the `.glaze` app file rather than hardcoding per-user SDK resolver behavior.
+- **User Frustrations & Important Remarks:** User said they will copy `Observability Monitor.glaze` here before pushing and wants the README to point developers to that import flow.
+
+### 2026-07-03 — Add developer setup README
+- **Goal:** Document what a developer needs installed before running the app locally.
+- **What was done:** Added `README.md` with prerequisites (macOS, Glaze macOS app, Node 24+, npm 11, Xcode Command Line Tools), instructions to copy/import `Observability Monitor.glaze` into the Glaze app, install/run/validation commands, troubleshooting, runtime data locations, and key repo notes.
+- **Key decisions:** Documented the Glaze app import workflow; warned not to install or modify `@glaze/core` as a normal app dependency.
+- **UI elements:** none (docs-only change).
+- **Backend elements:** none (docs-only change).
+- **Corrections/Lessons Learned:** The README now points developers at the intended Glaze project import step before running native dev commands.
+- **User Frustrations & Important Remarks:** User asked for developer prerequisites before running the app.
+
+### 2026-07-03 — Add project groups for related provider accounts
+- **Goal:** Let users group related provider accounts under one project/app (for example GitHub CI, Heroku deploys, and Grafana observability for the same product) and filter the dashboard by that group.
+- **What was done:** Added `ProjectGroup` metadata and optional `Account.groupId`, extended `accounts.json` to `{ accounts, groups }` with legacy migration, added group list/create-or-reuse/validation/pruning helpers, exposed `groups:list`, and extended account add/update IPC to accept `groupId` or `newGroupName`. Renderer now has a groups query, account dialog group assignment/create controls, Accounts list group labels, and a dashboard group filter.
+- **Key decisions:** Each account belongs to zero or one group; group names are trimmed and reused case-insensitively; unused groups are pruned after account removal/reassignment; polling/tray/notifications remain account-based.
+- **UI elements:** Project group select + new group input in add/edit account dialog; dashboard group filter; dashboard renders project group sections containing account sections.
+- **Backend elements:** accounts-store group helpers, `ProjectGroup`/`groupId` domain types, `groups:list` IPC, group assignment handling in `accounts:add/update`.
+- **Corrections/Lessons Learned:** Normal Glaze validation commands could not run in this checkout because the Glaze CLI path was unavailable; validation must be rerun once the SDK path is restored.
+- **User Frustrations & Important Remarks:** User explicitly wanted grouping across providers for the same app and the ability to filter to only one group.
+
 ### 2026-07-03 — Add AGENTS.md
 - **Goal:** User asked for an AGENTS.md documenting how Glaze apps should be built and how this repo works.
 - **What was done:** Wrote `AGENTS.md` at the repo root covering architecture (frontend/backend/IPC split), repo layout, hard constraints (SDK is read-only, public exports only, IPC/preload boundary, no fake CSS blur, encrypted secrets, no mock data), repo conventions (provider-registry pattern, styling, surgical edits, project-memory discipline), commands, and the current data/IPC surface.

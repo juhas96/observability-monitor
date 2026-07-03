@@ -6,6 +6,7 @@ import type {
   AggregateSnapshot,
   MonitorSettings,
   MonitorStatus,
+  ProjectGroup,
   ProviderInfo,
   TestConnectionResult,
   UpdateAccountRequest,
@@ -18,6 +19,7 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 export const monitorApi = {
   listProviders: () => invoke<ProviderInfo[]>("providers:list"),
   listAccounts: () => invoke<Account[]>("accounts:list"),
+  listGroups: () => invoke<ProjectGroup[]>("groups:list"),
   testConnection: (req: { provider: string; creds: Record<string, string> }) =>
     invoke<TestConnectionResult>("accounts:test", req),
   addAccount: (req: AddAccountRequest) => invoke<{ account: Account }>("accounts:add", req),

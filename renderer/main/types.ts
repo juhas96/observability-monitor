@@ -35,12 +35,19 @@ export interface Account {
   id: string;
   provider: Provider;
   label: string;
+  groupId?: string;
   createdAt: string;
   enabled: boolean;
   lastSyncAt?: string;
   lastError?: string;
   identity?: string;
   config?: Record<string, string>;
+}
+
+export interface ProjectGroup {
+  id: string;
+  name: string;
+  createdAt: string;
 }
 
 export interface MonitorItem {
@@ -114,6 +121,8 @@ export interface AddAccountRequest {
   provider: Provider;
   label: string;
   creds: Record<string, string>;
+  groupId?: string | null;
+  newGroupName?: string;
 }
 
 export interface UpdateAccountRequest {
@@ -121,4 +130,6 @@ export interface UpdateAccountRequest {
   label?: string;
   enabled?: boolean;
   creds?: Record<string, string>;
+  groupId?: string | null;
+  newGroupName?: string;
 }

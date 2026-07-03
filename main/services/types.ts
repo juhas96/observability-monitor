@@ -45,12 +45,19 @@ export interface Account {
   id: string;
   provider: Provider;
   label: string;
+  groupId?: string;
   createdAt: string;
   enabled: boolean;
   lastSyncAt?: string;
   lastError?: string;
   identity?: string;
   config?: Record<string, string>;
+}
+
+export interface ProjectGroup {
+  id: string;
+  name: string;
+  createdAt: string;
 }
 
 /** A single normalized item (run/deploy/migration/log/alert/…) shown in the dashboard. */

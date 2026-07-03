@@ -51,6 +51,6 @@ glaze.ts         app/window configuration
 
 ## Current data & IPC surface
 
-- **Storage**: `userData/accounts.json` (accounts, no secrets), `userData/tokens.bin.json` (encrypted secrets), `userData/settings.json` (poll interval + notification flags); a couple of filter keys in renderer localStorage.
-- **IPC channels**: `providers:list`; `accounts:list/add/update/remove/test`; `monitor:getSnapshot/refresh/getSettings/updateSettings/getStatus`; `monitor:openExternal`; pushed events `monitor:snapshot`, `monitor:accountError`, `monitor:pollingState`, `settings:monitor-changed`.
+- **Storage**: `userData/accounts.json` (accounts + project groups, no secrets), `userData/tokens.bin.json` (encrypted secrets), `userData/settings.json` (poll interval + notification flags); dashboard filter keys in renderer localStorage.
+- **IPC channels**: `providers:list`; `groups:list`; `accounts:list/add/update/remove/test`; `monitor:getSnapshot/refresh/getSettings/updateSettings/getStatus`; `monitor:openExternal`; pushed events `monitor:snapshot`, `monitor:accountError`, `monitor:pollingState`, `settings:monitor-changed`.
 - Full detail (key files, components in use, integrations, known pitfalls) lives in `.glaze_memory/PROJECT-CONTEXT.md` — keep this file and that one in sync when either changes.

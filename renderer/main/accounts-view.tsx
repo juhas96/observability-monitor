@@ -15,16 +15,25 @@ import {
 
 import { AddAccountDialog } from "./components/add-account-dialog";
 import { providerIcon, providerLabel } from "./components/provider-meta";
-import { useAccounts, useAccountMutations } from "./hooks/use-accounts";
+import { useAccounts, useAccountMutations, useGroups } from "./hooks/use-accounts";
 import { monitorApi } from "./ipc";
-import type { Account } from "./types";
+import type { Account, ProjectGroup } from "./types";
 
 function identity(account: Account): string {
   return account.identity ?? `${providerLabel(account.provider)} account`;
 }
 
+function accountDescription(account: Account, groupsById: Map<string, ProjectGroup>): string {
+  const parts = [identity(account)];
+  const group = account.groupId ? groupsById.get(account.groupId) : undefined;
+  if (group) parts.push(`Project: ${group.name}`);
+  if (account.lastError) parts.push(account.lastError);
+  return parts.join(" · ");
+}
+
 export function AccountsView() {
   const accountsQuery = useAccounts();
+  const groupsQuery = useGroups();
   const { update, remove } = useAccountMutations();
   const statusQuery = useQuery({ queryKey: ["monitor", "status"], queryFn: () => monitorApi.getStatus() });
 
@@ -42,6 +51,7 @@ export function AccountsView() {
   };
 
   const accounts = accountsQuery.data ?? [];
+  const groupsById = new Map((groupsQuery.data ?? []).map((group) => [group.id, group]));
   const encryptionUnavailable = statusQuery.data?.encryptionAvailable === false;
 
   return (
@@ -80,10 +90,7 @@ export function AccountsView() {
                 </List.ItemIcon>
                 <List.ItemContent>
                   <List.ItemTitle>{account.label}</List.ItemTitle>
-                  <List.ItemDescription>
-                    {identity(account)}
-                    {account.lastError ? ` · ${account.lastError}` : ""}
-                  </List.ItemDescription>
+                  <List.ItemDescription>{accountDescription(account, groupsById)}</List.ItemDescription>
                 </List.ItemContent>
                 <List.ItemAccessory>
                   <div className="flex items-center gap-2">

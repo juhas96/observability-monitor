@@ -7,8 +7,8 @@
 - **Providers (7):** GitHub (Actions runs), Cloudflare (Pages + Workers deploys), Supabase (latest migration + error-log rollup), Netlify (site deploys), Resend (domain verification + broadcasts), Grafana (firing/pending alerts), Heroku (latest release). Each = one encrypted secret + optional non-secret config fields (project ref, instance URL, account id, repo filter).
 - **Features:**
   - Connect multiple accounts per provider; credentials stored encrypted (safeStorage).
-  - Dashboard grouped by account showing recent items with status, relative time, open-in-browser.
-  - Provider + status filters (persisted to localStorage), manual refresh.
+  - Dashboard grouped by project group, then account, showing recent items with status, relative time, open-in-browser.
+  - Project group + provider + status filters (persisted to localStorage), manual refresh.
   - Background polling with configurable interval; native notifications on failure/success (configurable).
   - Menu bar (tray) icon tinted by aggregate status with a dropdown of recent items + quick actions.
   - Adding a new provider = one backend adapter module + one icon entry in `provider-meta.tsx`.
@@ -17,37 +17,38 @@
 
 ### Key files
 - `AGENTS.md` — repo-level architecture/conventions doc for AI coding agents (mirrors this file's non-sensitive parts); keep in sync when architecture/conventions change.
+- `README.md` — developer setup guide covering macOS/Node/npm/Glaze/Xcode prerequisites, importing `Observability Monitor.glaze` into the Glaze macOS app, install/run/validation commands, troubleshooting, and runtime data notes.
 - `main/index.ts` — app entry; creates main window (1000×700, min 720×480), inits tray + starts poller on ready, `showMainWindow()` helper, stops poller on quit.
 - `main/handlers/index.ts` — calls `registerProviders()` first, then registers account/monitor/provider handlers.
-- `main/handlers/accounts.ts` — generic, registry-driven `accounts:list/add/update/remove/test`; splits creds into secret (token-store) + non-secret (`account.config`) via `definition.fields`; `validate()` resolves identity.
+- `main/handlers/accounts.ts` — generic, registry-driven `accounts:list/add/update/remove/test` plus `groups:list`; splits creds into secret (token-store) + non-secret (`account.config`) via `definition.fields`; `validate()` resolves identity; account add/update can assign an existing project group or create/reuse one by name.
 - `main/handlers/monitor.ts` — `monitor:getSnapshot/refresh/getSettings/updateSettings/getStatus` + `monitor:openExternal` (open-in-browser proxy).
 - `main/handlers/providers.ts` — `providers:list` → `registry.publicList()` (id/label/scopeHint/fields; no functions).
 - `main/services/providers/registry.ts` — `ProviderDefinition` interface + `register/get/has/list/publicList/secretField`.
 - `main/services/providers/index.ts` — `registerProviders()` registers all 7 adapters; re-exports registry.
 - `main/services/providers/{github,cloudflare,supabase,netlify,resend,grafana,heroku}.ts` — one adapter each (`fields`, `validate`, `fetch`). github/cloudflare wrap the existing `github-api.ts`/`cloudflare-api.ts` clients.
-- `main/services/types.ts` — `Provider` (7-value union), generic `Account { …, identity?, config? }`, `MonitorItem { kind:string, category }`, `NormalizedStatus` (adds `warning`,`info`), settings.
-- `main/services/accounts-store.ts` — accounts.json (no secrets) + `migrate()` shim mapping legacy `login`/`accountName`/`cloudflareAccountId`/`repoFilter` → `identity`/`config`.
+- `main/services/types.ts` — `Provider` (7-value union), generic `Account { …, groupId?, identity?, config? }`, `ProjectGroup`, `MonitorItem { kind:string, category }`, `NormalizedStatus` (adds `warning`,`info`), settings.
+- `main/services/accounts-store.ts` — accounts.json (no secrets) with `{ accounts, groups }`; `migrate()` shim maps legacy `login`/`accountName`/`cloudflareAccountId`/`repoFilter` → `identity`/`config`; group helpers list/create-or-reuse/validate/prune unused groups.
 - `main/services/token-store.ts` (safeStorage → tokens.bin.json base64, one secret per account), `settings-store.ts`.
 - `main/services/poller.ts` — non-overlapping loop; `registry.get(provider).fetch(account, creds)` where creds = config + secret; drives notifications/tray/push.
 - `main/services/aggregator.ts` (cache + priority failure>warning>running>queued>success>info>cancelled>unknown), `diff-engine.ts`, `notifier.ts`, `push.ts`, `tray-controller.ts`.
 - `renderer/main/root-view.tsx` — SplitView + Sidebar nav; `router.tsx` routes (`/`, `/accounts`).
-- `renderer/main/dashboard-view.tsx` (provider filter from `providers:list`), `accounts-view.tsx`.
-- `renderer/main/components/` — `add-account-dialog.tsx` (data-driven: provider Select + dynamic fields from `providers:list`), `provider-meta.tsx` (provider→icon/label + category→icon; ONLY manual per-provider UI), `account-section.tsx`, `run-row.tsx` (icon via `categoryIcon`), `status-badge.tsx` (warning/info added), `relative-time.ts`.
-- `renderer/main/hooks/` — `use-monitor-data.ts`, `use-accounts.ts`, `use-providers.ts`.
-- `renderer/main/ipc.ts` / `types.ts` — typed IPC wrappers (+`listProviders`) + renderer mirror.
+- `renderer/main/dashboard-view.tsx` (project group + provider filters from `groups:list`/`providers:list`), `accounts-view.tsx`.
+- `renderer/main/components/` — `add-account-dialog.tsx` (data-driven: provider Select + dynamic fields from `providers:list`, project group assignment/create), `provider-meta.tsx` (provider→icon/label + category→icon; ONLY manual per-provider UI), `account-section.tsx`, `run-row.tsx` (icon via `categoryIcon`), `status-badge.tsx` (warning/info added), `relative-time.ts`.
+- `renderer/main/hooks/` — `use-monitor-data.ts`, `use-accounts.ts` (accounts + groups queries/mutations), `use-providers.ts`.
+- `renderer/main/ipc.ts` / `types.ts` — typed IPC wrappers (+`listProviders`, `listGroups`) + renderer mirror.
 - `renderer/settings/settings-view.tsx` — Theme + Monitoring fieldset; settings window 560×480.
 
 ### Components
 Uses @glaze/core: `SplitView` (storageKey "cicd-monitor"), `Sidebar*` (route nav), `ScrollArea`, `List`, `Dialog` (add/edit, controlled), `AlertDialog` (remove), `Select`/`Input`/`Switch`/`Field`/`FieldSet`, `Status`, `Badge`, `Callout`, `EmptyState`, `Text`, `Button`. lucide-react icons.
 
 ### Data & storage
-- `userData/accounts.json` — `{ accounts: Account[] }` with `identity` + `config` (non-secret fields: `accountId`, `repos`, `projectRef`, `baseUrl`), NO secrets.
+- `userData/accounts.json` — `{ accounts: Account[], groups: ProjectGroup[] }` with account `groupId`, `identity` + `config` (non-secret fields: `accountId`, `repos`, `projectRef`, `baseUrl`), NO secrets.
 - `userData/tokens.bin.json` — `{ version:1, tokens: {accountId: base64(safeStorage-encrypted secret)} }`.
 - `userData/settings.json` — MonitorSettings (pollIntervalSeconds default 60/min 30 + notify flags).
-- localStorage: `dashboard.providerFilter`, `dashboard.statusFilter`. In-memory: aggregator snapshot; diff-engine last-status map.
+- localStorage: `dashboard.groupFilter`, `dashboard.providerFilter`, `dashboard.statusFilter`. In-memory: aggregator snapshot; diff-engine last-status map.
 
 ### IPC channels
-- `providers:list` → ProviderInfo[]; `accounts:list` → Account[]; `accounts:add/update/test` (payload `{ provider, label?, creds }`, creds = flat map; secrets inbound only); `accounts:remove`.
+- `providers:list` → ProviderInfo[]; `groups:list` → ProjectGroup[]; `accounts:list` → Account[]; `accounts:add/update/test` (payload `{ provider, label?, creds, groupId?, newGroupName? }`, creds = flat map; secrets inbound only); `accounts:remove`.
 - `monitor:getSnapshot/refresh/getSettings/updateSettings/getStatus`; `monitor:openExternal`.
 - Push (via `ipcMain.broadcast` → renderer `onNotification`): `monitor:snapshot`, `monitor:accountError`, `monitor:pollingState`, `settings:monitor-changed`.
 
@@ -63,6 +64,33 @@ Uses @glaze/core: `SplitView` (storageKey "cicd-monitor"), `Sidebar*` (route nav
 - The Live-app evaluate MCP tool errored (GlazeIPCError) during validation; the app's own IPC works fine — validate via DOM snapshot / real runtime instead.
 
 ## Recent History
+
+### 2026-07-03 — Revert dev-run resolver experiment and document Glaze import
+- **Goal:** User asked to revert the runtime/tooling changes made while trying to run the app, leaving only the README and project group feature changes.
+- **What was done:** Restored `glaze.ts` and `tsconfig.json` to the normal SDK path shape, removed the temporary `.glaze-sdk` ignore/symlink behavior, removed the `sonner` dependency added for Vite dev scanning, and adjusted `README.md` to tell developers to copy/import `Observability Monitor.glaze` from the repo root into the Glaze macOS app before running.
+- **Key decisions:** Kept project group changes and the README; did not keep the per-user SDK resolver hook because app import via `Observability Monitor.glaze` is the intended setup flow.
+- **UI elements:** none.
+- **Backend elements:** tooling/docs cleanup only.
+- **Corrections/Lessons Learned:** The developer setup should be documented around importing the `.glaze` app file rather than hardcoding per-user SDK resolver behavior.
+- **User Frustrations & Important Remarks:** User said they will copy `Observability Monitor.glaze` here before pushing and wants the README to point developers to that import flow.
+
+### 2026-07-03 — Add developer setup README
+- **Goal:** Document what a developer needs installed before running the app locally.
+- **What was done:** Added `README.md` with prerequisites (macOS, Glaze macOS app, Node 24+, npm 11, Xcode Command Line Tools), instructions to copy/import `Observability Monitor.glaze` into the Glaze app, install/run/validation commands, troubleshooting, runtime data locations, and key repo notes.
+- **Key decisions:** Documented the Glaze app import workflow; warned not to install or modify `@glaze/core` as a normal app dependency.
+- **UI elements:** none (docs-only change).
+- **Backend elements:** none (docs-only change).
+- **Corrections/Lessons Learned:** The README now points developers at the intended Glaze project import step before running native dev commands.
+- **User Frustrations & Important Remarks:** User asked for developer prerequisites before running the app.
+
+### 2026-07-03 — Add project groups for related provider accounts
+- **Goal:** Let users group related provider accounts under one project/app (for example GitHub CI, Heroku deploys, and Grafana observability for the same product) and filter the dashboard by that group.
+- **What was done:** Added `ProjectGroup` metadata and optional `Account.groupId`, extended `accounts.json` to `{ accounts, groups }` with legacy migration, added group list/create-or-reuse/validation/pruning helpers, exposed `groups:list`, and extended account add/update IPC to accept `groupId` or `newGroupName`. Renderer now has a groups query, account dialog group assignment/create controls, Accounts list group labels, and a dashboard group filter.
+- **Key decisions:** Each account belongs to zero or one group; group names are trimmed and reused case-insensitively; unused groups are pruned after account removal/reassignment; polling/tray/notifications remain account-based.
+- **UI elements:** Project group select + new group input in add/edit account dialog; dashboard group filter; dashboard renders project group sections containing account sections.
+- **Backend elements:** accounts-store group helpers, `ProjectGroup`/`groupId` domain types, `groups:list` IPC, group assignment handling in `accounts:add/update`.
+- **Corrections/Lessons Learned:** Normal Glaze validation commands could not run in this checkout because the Glaze CLI path was unavailable; validation must be rerun once the SDK path is restored.
+- **User Frustrations & Important Remarks:** User explicitly wanted grouping across providers for the same app and the ability to filter to only one group.
 
 ### 2026-07-03 — Add AGENTS.md
 - **Goal:** User asked for an AGENTS.md documenting how Glaze apps should be built and how this repo works.
@@ -81,12 +109,3 @@ Uses @glaze/core: `SplitView` (storageKey "cicd-monitor"), `Sidebar*` (route nav
 - **Backend elements:** provider registry, 5 new api_integrations, generic credential split (safeStorage + config), ipc_handler (`providers:list`), legacy account migration.
 - **Corrections/Lessons Learned:** New adapters imported the `Account` type without referencing it → TS6196 unused-import errors; dropped the import where `account` was only a param. External endpoints couldn't be curl-validated (no sandbox network) so built with feature-detection; must verify with real tokens.
 - **User Frustrations & Important Remarks:** User added Heroku on top of the four proposed providers. Live-app evaluate tool was unavailable (IPC error) — validated via build + DOM snapshot instead.
-
-### 2026-07-03 — Build multi-account GitHub Actions + Cloudflare monitor
-- **Goal:** Recreate the "GitHub Actions Monitor" app but supporting multiple GitHub AND multiple Cloudflare accounts.
-- **What was done:** Built full backend (encrypted token vault, GitHub/Cloudflare REST clients, polling loop, aggregator, diff-engine, native notifications, menu bar tray) + frontend (SplitView sidebar nav, dashboard grouped by account with filters, accounts management with add/edit/remove + test-connection, monitoring settings). Bumped main window min to 720×480 and settings window to 560×480.
-- **Key decisions:** API tokens over OAuth (clean multi-account, no browser session conflicts); Cloudflare monitors both Pages + Workers; menu bar + dashboard hybrid; notify on failure+success configurable.
-- **UI elements:** sidebar nav, dashboard list grouped by account, account list, add/edit dialog, alert dialog, settings form, tray dropdown.
-- **Backend elements:** safeStorage secrets, JSON local_storage, api_integration (GitHub + Cloudflare), scheduler (poller), ipc_handler, native notifications, tray.
-- **Corrections/Lessons Learned:** Initial crash-loop — registering `shell:openExternal` conflicts with the native runtime's built-in handler; renamed to `monitor:openExternal`. `MenuItemColor` type isn't exported from backend; mirrored locally.
-- **User Frustrations & Important Remarks:** None; app launched and verified rendering after the handler-collision fix.

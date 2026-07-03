@@ -8,6 +8,7 @@ import { SNAPSHOT_KEY } from "./use-monitor-data";
 import type { AddAccountRequest, UpdateAccountRequest } from "../types";
 
 export const ACCOUNTS_KEY = ["accounts"] as const;
+export const GROUPS_KEY = ["groups"] as const;
 
 export function useAccounts() {
   return useQuery({
@@ -16,11 +17,19 @@ export function useAccounts() {
   });
 }
 
+export function useGroups() {
+  return useQuery({
+    queryKey: GROUPS_KEY,
+    queryFn: () => monitorApi.listGroups(),
+  });
+}
+
 export function useAccountMutations() {
   const queryClient = useQueryClient();
 
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ACCOUNTS_KEY });
+    void queryClient.invalidateQueries({ queryKey: GROUPS_KEY });
     void queryClient.invalidateQueries({ queryKey: SNAPSHOT_KEY });
   };
 
