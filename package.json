@@ -1,8 +1,8 @@
 {
   "id": "11t8ibl2",
-  "name": "multi-monitor",
+  "name": "observability-monitor",
   "version": "1.0.0",
-  "productName": "Multi Monitor",
+  "productName": "Observability Monitor",
   "description": "Monitor GitHub and Cloudflare from one",
   "iconDescription": "A unified monitoring dashboard for tracking multiple GitHub Actions workflows and Cloudflare accounts simultaneously. Users can connect and switch between different GitHub and Cloudflare accounts to view real-time status, logs, and metrics all in one place. Think of a control panel with multiple interconnected nodes, a network hub, or stacked dashboard cards representing different accounts.",
   "private": true,
@@ -61,6 +61,6 @@
     "host": {
       "minVersion": "0.8.0.0"
     },
-    "updatedAt": 1783077205475
+    "updatedAt": 1783079862768
   }
 }
