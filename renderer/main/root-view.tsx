@@ -1,28 +1,57 @@
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as React from "react";
-import { SplitView, Status } from "@glaze/core/components";
+import { LayoutDashboard, Plug } from "lucide-react";
+import { SplitView, Sidebar, SidebarList, SidebarListItem, Status } from "@glaze/core/components";
 import { useTheme, useConnection, useEnvironment } from "@glaze/core/hooks";
+
+interface NavItem {
+  path: string;
+  label: string;
+  icon: React.ReactNode;
+}
+
+const NAV_ITEMS: NavItem[] = [
+  { path: "/", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
+  { path: "/accounts", label: "Accounts", icon: <Plug className="size-4" /> },
+];
+
+function AppSidebar() {
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  return (
+    <Sidebar>
+      <SidebarList items={NAV_ITEMS} getItemKey={(item) => item.path}>
+        {NAV_ITEMS.map((item) => (
+          <SidebarListItem
+            key={item.path}
+            item={item}
+            icon={item.icon}
+            title={item.label}
+            selected={pathname === item.path}
+            onClick={() => navigate({ to: item.path })}
+          />
+        ))}
+      </SidebarList>
+    </Sidebar>
+  );
+}
 
 export function RootView() {
   useTheme();
 
-  // IPC connection and environment
   const connectionQuery = useConnection();
   const environmentQuery = useEnvironment();
 
-  // Cleanup IPC connection on unmount
   React.useEffect(() => {
     return () => {
-      console.log("[RootView] cleanup - disconnecting IPC client");
       window.glazeAPI?.glaze?.ipc?.disconnect();
     };
   }, []);
 
   return (
-    <div className="h-full relative [&:not(:has([data-toolbar]))_.drag-region]:z-50">
-      {/* Draggable top bar - fallback for when no toolbar is present */}
-      <div className="drag-region fixed top-0 left-0 right-0 h-13" />
-      <SplitView className="h-full">
+    <div className="h-full relative">
+      <SplitView className="h-full" sidebar={<AppSidebar />} storageKey="cicd-monitor">
         <Outlet />
       </SplitView>
 

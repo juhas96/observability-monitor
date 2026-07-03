@@ -4,7 +4,8 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
-import { HomeView } from "./home-view";
+import { DashboardView } from "./dashboard-view";
+import { AccountsView } from "./accounts-view";
 import { RootView } from "./root-view";
 import { QueryClient } from "@tanstack/react-query";
 import { ErrorBoundaryView } from "@glaze/core/components";
@@ -24,16 +25,25 @@ const rootRoute = createRootRouteWithContext<{
   },
 });
 
-const homeRoute = createRoute({
+const dashboardRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: HomeView,
+  component: DashboardView,
   staticData: {
-    title: "Home",
+    title: "Dashboard",
   },
 });
 
-const routeTree = rootRoute.addChildren([homeRoute]);
+const accountsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/accounts",
+  component: AccountsView,
+  staticData: {
+    title: "Accounts",
+  },
+});
+
+const routeTree = rootRoute.addChildren([dashboardRoute, accountsRoute]);
 
 const queryClient = new QueryClient();
 

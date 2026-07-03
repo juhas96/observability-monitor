@@ -8,6 +8,10 @@ import * as path from "path";
 import { fileURLToPath } from "url";
 
 import { appHandlers } from "./app.js";
+import { registerAccountHandlers } from "./accounts.js";
+import { registerMonitorHandlers } from "./monitor.js";
+import { registerProviderHandlers } from "./providers.js";
+import { registerProviders } from "../services/providers/index.js";
 import { getSettingsWindow, openSettingsWindow } from "../windows/settings-window.js";
 
 import { ipcMain, logger } from "@glaze/core/backend";
@@ -17,6 +21,9 @@ const __dirname = path.dirname(__filename);
 
 export function registerHandlers(): void {
   logger.info("handlers", "Registering IPC handlers...");
+
+  // Populate the provider registry before any handler or the poller runs.
+  registerProviders();
 
   // Register app handlers using ipcMain API
   ipcMain.handle("app:getInfo", async (_event) => {
@@ -38,12 +45,10 @@ export function registerHandlers(): void {
     getSettingsWindow()?.close();
   });
 
-  logger.info("handlers", "✓ IPC handlers registered");
+  // CI/CD Monitor handlers
+  registerAccountHandlers();
+  registerMonitorHandlers();
+  registerProviderHandlers();
 
-  // TODO: Add more handlers here using ipcMain.handle()
-  // Example:
-  // ipcMain.handle('file:read', async (event, path) => {
-  //   const fs = await import('fs/promises');
-  //   return await fs.readFile(path, 'utf-8');
-  // });
+  logger.info("handlers", "✓ IPC handlers registered");
 }

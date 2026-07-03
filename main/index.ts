@@ -13,6 +13,8 @@ import { app, BrowserWindow, Menu, logger, initDevToolsButtonState } from "@glaz
 import { registerHandlers } from "./handlers/index.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { openSettingsWindow } from "./windows/settings-window.js";
+import * as poller from "./services/poller.js";
+import { initTray } from "./services/tray-controller.js";
 
 // Get directory paths
 const __filename = fileURLToPath(import.meta.url);
@@ -53,8 +55,8 @@ async function createMainWindow() {
   // In production: __dirname = build/main, package.json is at ../../package.json
   const packageJsonPath = path.join(__dirname, "..", "..", "package.json");
 
-  const minWindowWidth = 390;
-  const minWindowHeight = 456;
+  const minWindowWidth = 720;
+  const minWindowHeight = 480;
   const windowWidth = 1000;
   const windowHeight = 700;
   let windowTitle = "Glaze App";
@@ -129,6 +131,16 @@ async function createMainWindow() {
   });
 }
 
+// Show/focus the main dashboard window, creating it if needed (used by tray + activate).
+async function showMainWindow() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.show();
+    mainWindow.focus();
+    return;
+  }
+  await createMainWindow();
+}
+
 // ── Application menu ──────────────────────────────────────────────────
 async function setupApplicationMenu() {
   await initDevToolsButtonState();
@@ -193,6 +205,7 @@ app.on("activate", (hasVisibleWindows) => {
 
 app.on("before-quit", () => {
   logger.info("main", "App before-quit, cleaning up...");
+  poller.stop();
 });
 
 // ── App ready ─────────────────────────────────────────────────────────
@@ -223,4 +236,15 @@ app.whenReady().then(async () => {
     .catch((error) => {
       logger.error("main", "Failed to create main window", error);
     });
+
+  // Menu bar tray + background polling.
+  initTray({
+    onRefresh: () => void poller.refresh(),
+    onOpenDashboard: () => void showMainWindow(),
+    onOpenSettings: () => void openSettingsWindow(),
+  });
+
+  poller.start().catch((error) => {
+    logger.error("main", "Failed to start poller", error);
+  });
 });
