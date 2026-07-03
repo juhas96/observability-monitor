@@ -233,6 +233,8 @@ export interface MonitorSettings {
   notifyOnlyOnChange: boolean;
   soundOnNotify: boolean;
   digest: DigestSettings;
+  launchAtLogin: boolean;
+  mutedUntil?: string;
 }
 
 export type HistoryRange = "15m" | "1h" | "6h" | "24h" | "7d" | "14d";
@@ -376,6 +378,8 @@ export interface AlertRule {
   threshold: number;
   scope: RuleScope;
   enabled: boolean;
+  forMinutes?: number;
+  cooldownMinutes?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -388,11 +392,14 @@ export interface AlertRuleInput {
   threshold: number;
   scope: RuleScope;
   enabled?: boolean;
+  forMinutes?: number;
+  cooldownMinutes?: number;
 }
 
 export interface RuleState {
   ruleId: string;
   firing: boolean;
+  breaching?: boolean;
   value: number | null;
   since?: string;
 }

@@ -1,8 +1,10 @@
 /**
- * Evaluates custom alerting rules against each snapshot. Keeps in-memory firing
- * state (like the diff-engine) so a rule alerts on the transition INTO breach,
- * not every cycle. On fire: native notification + channel dispatch + a history
- * event so it shows in the incident center and timeline.
+ * Evaluates custom alerting rules against each snapshot. Keeps in-memory runtime
+ * state so a rule alerts only when a breach is SUSTAINED for `forMinutes`, then
+ * respects a `cooldownMinutes` before it can fire again, and sends a recovery
+ * notification when the breach clears. On fire/recovery: native notification +
+ * channel dispatch + a history event (incident center / timeline). A global
+ * snooze (`settings.mutedUntil`) suppresses delivery without losing state.
  */
 
 import { Notification, logger } from "@glaze/core/backend";
@@ -10,16 +12,26 @@ import { Notification, logger } from "@glaze/core/backend";
 import { dispatch } from "./dispatch.js";
 import { appendEvent } from "./history-store.js";
 import { listRules } from "./rules-store.js";
+import { getSettings } from "./settings-store.js";
 import type {
   AggregateSnapshot,
   AlertRule,
+  DispatchEventKind,
   HistoryEvent,
   Provider,
   RuleScope,
   RuleState,
 } from "./types.js";
 
-const states = new Map<string, RuleState>();
+interface RuleRuntime {
+  breaching: boolean;
+  breachingSince?: string;
+  alerting: boolean; // an alert has fired and not yet recovered
+  firedAt?: string;
+  value: number | null;
+}
+
+const runtime = new Map<string, RuleRuntime>();
 
 function groupByAccount(snapshot: AggregateSnapshot): Map<string, string | undefined> {
   const map = new Map<string, string | undefined>();
@@ -92,39 +104,43 @@ function describe(rule: AlertRule, value: number): string {
   }
 }
 
-function fire(rule: AlertRule, value: number, provider: Provider | undefined, at: string): void {
-  const body = describe(rule, value);
-
+function notify(title: string, subtitle: string, body: string, muted: boolean, kind: DispatchEventKind): void {
+  if (muted) return;
   if (Notification.isSupported()) {
     try {
-      new Notification({ title: `⚠️ ${rule.name}`, subtitle: "Alert rule", body }).show();
+      new Notification({ title, subtitle, body }).show();
     } catch (err) {
       logger.warn("rules", "Failed to show notification", { err: String(err) });
     }
   }
-
-  void dispatch({ kind: "alert", title: `Alert: ${rule.name}`, body });
-
-  // Attribute the timeline/incident event to a provider when one is determinable.
-  if (provider) {
-    const event: HistoryEvent = {
-      id: `alert:rule:${rule.id}:${at}`,
-      ts: at,
-      type: "alert",
-      provider,
-      accountId: rule.scope.accountId ?? "rule",
-      groupId: rule.scope.groupId,
-      sourceUid: `rule:${rule.id}`,
-      title: rule.name,
-      status: "warning",
-      severity: "high",
-      url: "",
-    };
-    void appendEvent(event).catch((err) => logger.warn("rules", "Failed to record alert event", { err: String(err) }));
-  }
+  void dispatch({ kind, title, body });
 }
 
-/** Evaluate all enabled rules against the snapshot; fire on transitions into breach. */
+function recordEvent(
+  rule: AlertRule,
+  provider: Provider | undefined,
+  at: string,
+  type: "alert" | "recovery",
+  status: HistoryEvent["status"],
+): void {
+  if (!provider) return; // HistoryEvent.provider must be a real Provider
+  const event: HistoryEvent = {
+    id: `${type}:rule:${rule.id}:${at}`,
+    ts: at,
+    type,
+    provider,
+    accountId: rule.scope.accountId ?? "rule",
+    groupId: rule.scope.groupId,
+    sourceUid: `rule:${rule.id}`,
+    title: rule.name,
+    status,
+    severity: type === "alert" ? "high" : "info",
+    url: "",
+  };
+  void appendEvent(event).catch((err) => logger.warn("rules", "Failed to record rule event", { err: String(err) }));
+}
+
+/** Evaluate all enabled rules; fire on sustained breach, recover on clear. */
 export async function evaluateRules(snapshot: AggregateSnapshot): Promise<void> {
   let rules: AlertRule[];
   try {
@@ -134,32 +150,61 @@ export async function evaluateRules(snapshot: AggregateSnapshot): Promise<void> 
     return;
   }
 
+  const settings = await getSettings().catch(() => null);
+  const muted = Boolean(settings?.mutedUntil && new Date(settings.mutedUntil).getTime() > Date.now());
+
   const groups = groupByAccount(snapshot);
   const now = snapshot.generatedAt;
+  const nowMs = new Date(now).getTime();
   const liveIds = new Set(rules.map((rule) => rule.id));
 
   for (const rule of rules) {
     if (!rule.enabled) {
-      states.set(rule.id, { ruleId: rule.id, firing: false, value: null });
+      runtime.set(rule.id, { breaching: false, alerting: false, value: null });
       continue;
     }
+
     const { value, provider } = computeValue(rule, snapshot, groups);
-    const firing = value !== null && breached(rule, value);
-    const prev = states.get(rule.id);
-    states.set(rule.id, {
-      ruleId: rule.id,
-      firing,
-      value,
-      since: firing ? (prev?.firing ? prev.since : now) : undefined,
-    });
-    if (firing && !prev?.firing) fire(rule, value as number, provider, now);
+    const breaching = value !== null && breached(rule, value);
+    const prev = runtime.get(rule.id) ?? { breaching: false, alerting: false, value: null };
+    const forMs = Math.max(0, (rule.forMinutes ?? 0) * 60_000);
+    const cooldownMs = Math.max(0, (rule.cooldownMinutes ?? 0) * 60_000);
+
+    const next: RuleRuntime = { ...prev, breaching, value };
+
+    if (breaching) {
+      next.breachingSince = prev.breaching ? prev.breachingSince ?? now : now;
+      const sustainedMs = nowMs - new Date(next.breachingSince).getTime();
+      const cooldownOk = !prev.firedAt || nowMs - new Date(prev.firedAt).getTime() >= cooldownMs;
+      if (!prev.alerting && sustainedMs >= forMs && cooldownOk) {
+        next.alerting = true;
+        next.firedAt = now;
+        notify(`⚠️ ${rule.name}`, "Alert rule", describe(rule, value as number), muted, "alert");
+        recordEvent(rule, provider, now, "alert", "warning");
+      }
+    } else {
+      next.breachingSince = undefined;
+      if (prev.alerting) {
+        next.alerting = false;
+        notify(`✅ Resolved: ${rule.name}`, "Alert rule", "Condition is back to normal.", muted, "recovery");
+        recordEvent(rule, provider, now, "recovery", "success");
+      }
+    }
+
+    runtime.set(rule.id, next);
   }
 
-  for (const id of [...states.keys()]) {
-    if (!liveIds.has(id)) states.delete(id);
+  for (const id of [...runtime.keys()]) {
+    if (!liveIds.has(id)) runtime.delete(id);
   }
 }
 
 export function getRuleStates(): RuleState[] {
-  return [...states.values()];
+  return [...runtime.entries()].map(([ruleId, r]) => ({
+    ruleId,
+    firing: r.alerting,
+    breaching: r.breaching,
+    value: r.value,
+    since: r.breachingSince,
+  }));
 }

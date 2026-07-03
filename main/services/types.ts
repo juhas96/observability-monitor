@@ -244,6 +244,8 @@ export interface MonitorSettings {
   notifyOnlyOnChange: boolean;
   soundOnNotify: boolean;
   digest: DigestSettings;
+  launchAtLogin: boolean;
+  mutedUntil?: string; // ISO; while in the future all notifications are snoozed
 }
 
 export type HistoryRange = "15m" | "1h" | "6h" | "24h" | "7d" | "14d";
@@ -394,6 +396,8 @@ export interface AlertRule {
   threshold: number;
   scope: RuleScope;
   enabled: boolean;
+  forMinutes?: number; // breach must be sustained this long before firing (0 = instant)
+  cooldownMinutes?: number; // minimum gap between fires after a recovery
   createdAt: string;
   updatedAt: string;
 }
@@ -406,14 +410,17 @@ export interface AlertRuleInput {
   threshold: number;
   scope: RuleScope;
   enabled?: boolean;
+  forMinutes?: number;
+  cooldownMinutes?: number;
 }
 
 /** Current evaluation state of a rule, exposed to the renderer. */
 export interface RuleState {
   ruleId: string;
-  firing: boolean;
+  firing: boolean; // an alert is active (fired, not yet recovered)
+  breaching?: boolean; // currently over/under threshold this cycle
   value: number | null;
-  since?: string;
+  since?: string; // when the current breach began
 }
 
 export const DEFAULT_SETTINGS: MonitorSettings = {
@@ -423,6 +430,7 @@ export const DEFAULT_SETTINGS: MonitorSettings = {
   notifyOnlyOnChange: true,
   soundOnNotify: false,
   digest: { enabled: false, cadence: "daily", hour: 9 },
+  launchAtLogin: false,
 };
 
 export const MIN_POLL_INTERVAL_SECONDS = 30;
@@ -431,7 +439,7 @@ export const MIN_POLL_INTERVAL_SECONDS = 30;
 export type ChannelType = "slack" | "webhook";
 
 /** Event categories a channel can subscribe to. */
-export type DispatchEventKind = "failure" | "success" | "alert" | "digest";
+export type DispatchEventKind = "failure" | "success" | "alert" | "recovery" | "digest";
 
 /** Non-secret channel metadata persisted in channels.json — the URL lives in the encrypted vault. */
 export interface Channel {

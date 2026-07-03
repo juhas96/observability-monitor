@@ -1,3 +1,4 @@
+import * as React from "react";
 import {
   createMemoryHistory,
   createRootRouteWithContext,
@@ -10,12 +11,28 @@ import { AlertsView } from "./alerts-view";
 import { AppsView } from "./apps-view";
 import { GrafanaView } from "./grafana-view";
 import { IncidentsView } from "./incidents-view";
-import { InsightsView } from "./insights-view";
 import { RootView } from "./root-view";
-import { TimelineView } from "./timeline-view";
 import { UptimeView } from "./uptime-view";
 import { QueryClient } from "@tanstack/react-query";
 import { ErrorBoundaryView } from "@glaze/core/components";
+
+// Recharts-heavy views are code-split so they leave the main bundle.
+const InsightsView = React.lazy(() => import("./insights-view").then((m) => ({ default: m.InsightsView })));
+const TimelineView = React.lazy(() => import("./timeline-view").then((m) => ({ default: m.TimelineView })));
+
+function RouteFallback() {
+  return <div className="flex h-full items-center justify-center text-tertiary">Loading…</div>;
+}
+
+function withSuspense(Component: React.ComponentType) {
+  return function SuspendedRoute() {
+    return (
+      <React.Suspense fallback={<RouteFallback />}>
+        <Component />
+      </React.Suspense>
+    );
+  };
+}
 
 const rootRoute = createRootRouteWithContext<{
   queryClient: QueryClient;
@@ -71,7 +88,7 @@ const grafanaRoute = createRoute({
 const insightsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/insights",
-  component: InsightsView,
+  component: withSuspense(InsightsView),
   staticData: {
     title: "Insights",
   },
@@ -89,7 +106,7 @@ const incidentsRoute = createRoute({
 const timelineRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/timeline",
-  component: TimelineView,
+  component: withSuspense(TimelineView),
   staticData: {
     title: "Timeline",
   },

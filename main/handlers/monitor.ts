@@ -3,7 +3,7 @@
  * open-in-browser proxy (shell.openExternal lives in the backend).
  */
 
-import { ipcMain, shell, logger } from "@glaze/core/backend";
+import { app, ipcMain, shell, logger } from "@glaze/core/backend";
 
 import * as aggregator from "../services/aggregator.js";
 import { getAccount, listAccounts, listGroups } from "../services/accounts-store.js";
@@ -70,6 +70,11 @@ export function registerMonitorHandlers(): void {
     ipcMain.broadcast("settings:monitor-changed", { value: next });
     await poller.reschedule();
     await digest.reschedule();
+    try {
+      app.setLoginItemSettings({ openAtLogin: next.launchAtLogin });
+    } catch (err) {
+      logger.warn("monitor", "Failed to apply login item setting", { err: String(err) });
+    }
     return next;
   });
 

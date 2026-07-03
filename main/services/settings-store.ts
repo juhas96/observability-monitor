@@ -22,6 +22,12 @@ export async function updateSettings(patch: Partial<MonitorSettings>): Promise<M
     next.pollIntervalSeconds = current.pollIntervalSeconds;
   }
   next.pollIntervalSeconds = Math.max(MIN_POLL_INTERVAL_SECONDS, Math.round(next.pollIntervalSeconds));
+  // Normalize the snooze: drop empty/invalid/past values so "clear" works over IPC
+  // (where `undefined` fields are stripped from the JSON payload).
+  if (typeof next.mutedUntil === "string") {
+    const until = new Date(next.mutedUntil).getTime();
+    if (!Number.isFinite(until) || until <= Date.now()) next.mutedUntil = undefined;
+  }
   await store.save(next);
   return next;
 }

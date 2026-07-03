@@ -3,6 +3,7 @@ import * as React from "react";
 import { BellPlus, BellRing, GitCommitHorizontal, LayoutDashboard, LineChart, PanelsTopLeft, Plug, Radio, Siren } from "lucide-react";
 import { SplitView, Sidebar, SidebarList, SidebarListItem, Status } from "@glaze/core/components";
 import { useTheme, useConnection, useEnvironment } from "@glaze/core/hooks";
+import { CommandPalette } from "./components/command-palette";
 
 interface NavItem {
   path: string;
@@ -49,6 +50,7 @@ export function RootView() {
 
   const connectionQuery = useConnection();
   const environmentQuery = useEnvironment();
+  const [paletteOpen, setPaletteOpen] = React.useState(false);
 
   React.useEffect(() => {
     return () => {
@@ -56,11 +58,24 @@ export function RootView() {
     };
   }, []);
 
+  React.useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   return (
     <div className="h-full relative">
       <SplitView className="h-full" sidebar={<AppSidebar />} storageKey="cicd-monitor">
         <Outlet />
       </SplitView>
+
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
 
       <div className="flex flex-col items-end gap-1 mt-2 fixed bottom-12 right-2">
         {import.meta.env.DEV ? (

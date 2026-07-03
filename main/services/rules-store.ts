@@ -44,6 +44,8 @@ export async function saveRule(input: AlertRuleInput): Promise<AlertRule> {
       threshold,
       scope: input.scope,
       enabled: input.enabled ?? rules[idx].enabled,
+      forMinutes: input.forMinutes,
+      cooldownMinutes: input.cooldownMinutes,
       updatedAt: now,
     };
     rules[idx] = rule;
@@ -56,6 +58,8 @@ export async function saveRule(input: AlertRuleInput): Promise<AlertRule> {
       threshold,
       scope: input.scope,
       enabled: input.enabled ?? true,
+      forMinutes: input.forMinutes,
+      cooldownMinutes: input.cooldownMinutes,
       createdAt: now,
       updatedAt: now,
     };

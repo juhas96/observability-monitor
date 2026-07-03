@@ -18,6 +18,7 @@ import {
   SelectValue,
   SelectContent,
   SelectItem,
+  Button,
   toast,
 } from "@glaze/core/components";
 import type { NativeThemeInfo } from "@glaze/core/ipc";
@@ -36,6 +37,8 @@ interface MonitorSettings {
   notifyOnlyOnChange: boolean;
   soundOnNotify: boolean;
   digest: DigestSettings;
+  launchAtLogin: boolean;
+  mutedUntil?: string;
 }
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
@@ -112,6 +115,11 @@ export function SettingsView() {
   };
 
   const digest: DigestSettings = monitor?.digest ?? { enabled: false, cadence: "daily", hour: 9 };
+
+  const mutedActive = monitor?.mutedUntil ? new Date(monitor.mutedUntil).getTime() > Date.now() : false;
+  const snoozeDescription = mutedActive
+    ? `Snoozed until ${new Date(monitor!.mutedUntil!).toLocaleString()}.`
+    : "Temporarily silence all notifications.";
 
   const handleThemeChange = async (value: string) => {
     const source = value as "system" | "light" | "dark";
@@ -204,6 +212,33 @@ export function SettingsView() {
                 checked={monitor?.soundOnNotify ?? false}
                 onCheckedChange={(checked) => updateMonitor({ soundOnNotify: checked })}
               />
+            </Field>
+            <Field label="Launch at login" description="Start the monitor automatically when you log in.">
+              <Switch
+                checked={monitor?.launchAtLogin ?? false}
+                onCheckedChange={(checked) => updateMonitor({ launchAtLogin: checked })}
+              />
+            </Field>
+            <Field label="Snooze notifications" description={snoozeDescription}>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="glass"
+                  size="small"
+                  onClick={() => updateMonitor({ mutedUntil: new Date(Date.now() + 60 * 60 * 1000).toISOString() })}
+                >
+                  1 hour
+                </Button>
+                <Button
+                  variant="glass"
+                  size="small"
+                  onClick={() => updateMonitor({ mutedUntil: new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString() })}
+                >
+                  8 hours
+                </Button>
+                <Button variant="transparent" size="small" onClick={() => updateMonitor({ mutedUntil: "" })}>
+                  Clear
+                </Button>
+              </div>
             </Field>
           </FieldGroup>
         </FieldSet>

@@ -24,6 +24,9 @@ function providerLabel(kind: string): string {
 }
 
 export async function notifyTransitions(transitions: StatusTransition[], settings: MonitorSettings): Promise<void> {
+  // Global snooze: suppress all delivery while muted.
+  if (settings.mutedUntil && new Date(settings.mutedUntil).getTime() > Date.now()) return;
+
   const nativeSupported = Notification.isSupported();
 
   for (const t of transitions) {

@@ -14,7 +14,7 @@ export interface ChannelView extends Channel {
 }
 
 const CHANNEL_TYPES: ChannelType[] = ["slack", "webhook"];
-const EVENT_KINDS: DispatchEventKind[] = ["failure", "success", "alert", "digest"];
+const EVENT_KINDS: DispatchEventKind[] = ["failure", "success", "alert", "recovery", "digest"];
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null) return {};

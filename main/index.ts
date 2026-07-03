@@ -8,14 +8,25 @@ import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
 
-import { app, BrowserWindow, Menu, logger, initDevToolsButtonState } from "@glaze/core/backend";
+import { app, BrowserWindow, Menu, ipcMain, logger, initDevToolsButtonState } from "@glaze/core/backend";
 
 import { registerHandlers } from "./handlers/index.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { openSettingsWindow } from "./windows/settings-window.js";
 import * as poller from "./services/poller.js";
 import * as digest from "./services/digest-scheduler.js";
+import { getSettings, updateSettings } from "./services/settings-store.js";
 import { initTray } from "./services/tray-controller.js";
+
+/** Set (or clear with undefined) the global notification snooze and notify the settings UI. */
+async function setSnooze(mutedUntil: string | undefined): Promise<void> {
+  try {
+    const next = await updateSettings({ mutedUntil });
+    ipcMain.broadcast("settings:monitor-changed", { value: next });
+  } catch (err) {
+    logger.warn("main", "Failed to update snooze", { err: String(err) });
+  }
+}
 
 // Get directory paths
 const __filename = fileURLToPath(import.meta.url);
@@ -239,11 +250,21 @@ app.whenReady().then(async () => {
       logger.error("main", "Failed to create main window", error);
     });
 
+  // Apply the persisted launch-at-login preference.
+  try {
+    const settings = await getSettings();
+    app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
+  } catch (error) {
+    logger.warn("main", "Failed to apply login item setting", { err: String(error) });
+  }
+
   // Menu bar tray + background polling.
   initTray({
     onRefresh: () => void poller.refresh(),
     onOpenDashboard: () => void showMainWindow(),
     onOpenSettings: () => void openSettingsWindow(),
+    onSnooze: (minutes) => void setSnooze(new Date(Date.now() + minutes * 60_000).toISOString()),
+    onClearSnooze: () => void setSnooze(undefined),
   });
 
   poller.start().catch((error) => {

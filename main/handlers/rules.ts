@@ -23,6 +23,11 @@ function parseScope(value: unknown): RuleScope {
   };
 }
 
+function optionalNumber(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && value !== "" && value != null ? Math.max(0, n) : undefined;
+}
+
 function parseInput(payload: unknown): AlertRuleInput {
   const req = asRecord(payload);
   if (typeof req.name !== "string") throw new Error("Rule name is required.");
@@ -34,6 +39,8 @@ function parseInput(payload: unknown): AlertRuleInput {
     threshold: Number(req.threshold),
     scope: parseScope(req.scope),
     enabled: typeof req.enabled === "boolean" ? req.enabled : undefined,
+    forMinutes: optionalNumber(req.forMinutes),
+    cooldownMinutes: optionalNumber(req.cooldownMinutes),
   };
 }
 

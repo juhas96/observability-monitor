@@ -22,6 +22,13 @@ import type { Account, AggregateSnapshot, HttpCheckResult } from "./types.js";
 
 const CONCURRENCY = 4;
 
+// Per-account backoff after failures (esp. HTTP 429) so we stop hammering a
+// rate-limited or broken provider. Reset on the next successful fetch.
+const BACKOFF_BASE_MS = 2 * 60_000;
+const BACKOFF_RATE_LIMIT_BASE_MS = 5 * 60_000;
+const BACKOFF_CAP_MS = 30 * 60_000;
+const backoff = new Map<string, { failures: number; nextAttemptAt: number }>();
+
 let timer: ReturnType<typeof setTimeout> | null = null;
 let running = false;
 let cycleInFlight = false;
@@ -45,12 +52,19 @@ async function fetchAccount(account: Account): Promise<void> {
     ]);
     aggregator.setAccountData(account.id, items, now, { signals, incidents, metrics, deepLinks });
     await updateAccount(account.id, { lastSyncAt: now, lastError: undefined });
+    backoff.delete(account.id);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     aggregator.setAccountError(account.id, message, now);
     await updateAccount(account.id, { lastSyncAt: now, lastError: message }).catch(() => {});
     pushAccountError(account.id, message);
-    logger.warn("poller", "Account fetch failed", { accountId: account.id, error: message });
+
+    // Exponential backoff; a larger base for rate-limit (429) responses.
+    const failures = (backoff.get(account.id)?.failures ?? 0) + 1;
+    const base = /(^|\D)429(\D|$)/.test(message) ? BACKOFF_RATE_LIMIT_BASE_MS : BACKOFF_BASE_MS;
+    const delay = Math.min(BACKOFF_CAP_MS, base * 2 ** (failures - 1));
+    backoff.set(account.id, { failures, nextAttemptAt: Date.now() + delay });
+    logger.warn("poller", "Account fetch failed", { accountId: account.id, error: message, failures, backoffMs: delay });
   }
 }
 
@@ -73,7 +87,13 @@ export async function runCycle(onlyAccountId?: string): Promise<AggregateSnapsho
     aggregator.pruneToAccounts(new Set(all.map((a) => a.id)));
 
     let targets = all.filter((a) => a.enabled);
-    if (onlyAccountId) targets = targets.filter((a) => a.id === onlyAccountId);
+    if (onlyAccountId) {
+      // User-initiated single-account refresh bypasses backoff.
+      targets = targets.filter((a) => a.id === onlyAccountId);
+    } else {
+      const nowMs = Date.now();
+      targets = targets.filter((a) => (backoff.get(a.id)?.nextAttemptAt ?? 0) <= nowMs);
+    }
 
     await runInBatches(targets);
 
@@ -161,4 +181,5 @@ export async function reschedule(): Promise<void> {
 export function dropAccount(accountId: string): void {
   aggregator.removeAccount(accountId);
   forgetAccount(accountId);
+  backoff.delete(accountId);
 }

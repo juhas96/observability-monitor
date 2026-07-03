@@ -80,6 +80,8 @@ function AlertDialog({
   const [scopeType, setScopeType] = useState<ScopeType>("all");
   const [scopeValue, setScopeValue] = useState(NONE);
   const [enabled, setEnabled] = useState(true);
+  const [forMinutes, setForMinutes] = useState("");
+  const [cooldownMinutes, setCooldownMinutes] = useState("");
 
   useMemo(() => {
     if (!open) return;
@@ -90,6 +92,8 @@ function AlertDialog({
     setScopeType(editing ? scopeTypeOf(editing.scope) : "all");
     setScopeValue(editing ? scopeValueOf(editing.scope) : NONE);
     setEnabled(editing?.enabled ?? true);
+    setForMinutes(editing?.forMinutes != null ? String(editing.forMinutes) : "");
+    setCooldownMinutes(editing?.cooldownMinutes != null ? String(editing.cooldownMinutes) : "");
   }, [open, editing]);
 
   const scopeOptions = useMemo(() => {
@@ -137,6 +141,8 @@ function AlertDialog({
         threshold: value,
         scope: buildScope(),
         enabled,
+        forMinutes: forMinutes.trim() !== "" ? Number(forMinutes) : undefined,
+        cooldownMinutes: cooldownMinutes.trim() !== "" ? Number(cooldownMinutes) : undefined,
       });
       onOpenChange(false);
     } catch (error) {
@@ -210,6 +216,14 @@ function AlertDialog({
             </Select>
           </Field>
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="For (minutes)" orientation="vertical" className="p-0">
+            <Input value={forMinutes} onChange={(event) => setForMinutes(event.target.value)} placeholder="0 = instant" />
+          </Field>
+          <Field label="Cooldown (minutes)" orientation="vertical" className="p-0">
+            <Input value={cooldownMinutes} onChange={(event) => setCooldownMinutes(event.target.value)} placeholder="0" />
+          </Field>
+        </div>
         {metric === "latency" && scopeType !== "check" ? (
           <Callout color="yellow">Latency rules only evaluate when scoped to an uptime check.</Callout>
         ) : null}
@@ -265,10 +279,14 @@ function RuleCard({
         </Text>
         <Text variant="small" color="tertiary">Current: {formatValue(rule, state)}</Text>
       </div>
-      {rule.enabled ? (
-        <Badge color={state?.firing ? "red" : "green"}>{state?.firing ? "Firing" : "OK"}</Badge>
-      ) : (
+      {!rule.enabled ? (
         <Badge color="secondary">Disabled</Badge>
+      ) : state?.firing ? (
+        <Badge color="red">Firing</Badge>
+      ) : state?.breaching ? (
+        <Badge color="yellow">Pending</Badge>
+      ) : (
+        <Badge color="green">OK</Badge>
       )}
       <Switch
         checked={rule.enabled}

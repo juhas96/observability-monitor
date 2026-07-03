@@ -5,6 +5,7 @@
 
 import { Tray, Menu, shell, logger } from "@glaze/core/backend";
 
+import { getRuleStates } from "./rules-engine.js";
 import type { AggregateSnapshot, MonitorItem, NormalizedStatus } from "./types.js";
 
 // Mirror of the SDK's non-exported MenuItemColor palette token union.
@@ -14,6 +15,8 @@ export interface TrayCallbacks {
   onRefresh: () => void;
   onOpenDashboard: () => void;
   onOpenSettings: () => void;
+  onSnooze: (minutes: number) => void;
+  onClearSnooze: () => void;
 }
 
 const TRAY_SYMBOL = "bolt.horizontal.circle.fill";
@@ -56,11 +59,18 @@ function statusGlyph(status: NormalizedStatus): string {
 function buildMenu(snapshot: AggregateSnapshot | null): Menu {
   const items = snapshot?.items.slice(0, MAX_MENU_ITEMS) ?? [];
   const failing = snapshot?.items.filter((i) => i.status === "failure").length ?? 0;
+  const checksDown = snapshot?.checks?.filter((c) => !c.ok).length ?? 0;
+  const rulesFiring = getRuleStates().filter((r) => r.firing).length;
+
+  const summaryParts: string[] = [];
+  if (failing > 0) summaryParts.push(`${failing} failing`);
+  if (checksDown > 0) summaryParts.push(`${checksDown} down`);
+  if (rulesFiring > 0) summaryParts.push(`${rulesFiring} alerting`);
 
   const template: Parameters<typeof Menu.buildFromTemplate>[0] = [
     {
       label: snapshot
-        ? `CI/CD Monitor — ${failing > 0 ? `${failing} failing` : "all clear"}`
+        ? `CI/CD Monitor — ${summaryParts.length > 0 ? summaryParts.join(", ") : "all clear"}`
         : "CI/CD Monitor — starting…",
       enabled: false,
     },
@@ -82,6 +92,15 @@ function buildMenu(snapshot: AggregateSnapshot | null): Menu {
     { type: "separator" },
     { label: "Open Dashboard", click: () => callbacks?.onOpenDashboard() },
     { label: "Refresh Now", click: () => callbacks?.onRefresh() },
+    {
+      label: "Snooze Notifications",
+      submenu: [
+        { label: "For 1 hour", click: () => callbacks?.onSnooze(60) },
+        { label: "For 8 hours", click: () => callbacks?.onSnooze(8 * 60) },
+        { type: "separator" },
+        { label: "Clear snooze", click: () => callbacks?.onClearSnooze() },
+      ],
+    },
     { label: "Settings…", click: () => callbacks?.onOpenSettings() },
     { type: "separator" },
     { label: "Quit", role: "quit" },
