@@ -6,12 +6,14 @@ import {
 } from "@tanstack/react-router";
 import { DashboardView } from "./dashboard-view";
 import { AccountsView } from "./accounts-view";
+import { AlertsView } from "./alerts-view";
 import { AppsView } from "./apps-view";
 import { GrafanaView } from "./grafana-view";
 import { IncidentsView } from "./incidents-view";
 import { InsightsView } from "./insights-view";
 import { RootView } from "./root-view";
 import { TimelineView } from "./timeline-view";
+import { UptimeView } from "./uptime-view";
 import { QueryClient } from "@tanstack/react-query";
 import { ErrorBoundaryView } from "@glaze/core/components";
 
@@ -93,12 +95,32 @@ const timelineRoute = createRoute({
   },
 });
 
+const uptimeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/uptime",
+  component: UptimeView,
+  staticData: {
+    title: "Uptime",
+  },
+});
+
+const alertsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/alerts",
+  component: AlertsView,
+  staticData: {
+    title: "Alert rules",
+  },
+});
+
 const routeTree = rootRoute.addChildren([
   dashboardRoute,
   appsRoute,
   insightsRoute,
   incidentsRoute,
   timelineRoute,
+  uptimeRoute,
+  alertsRoute,
   grafanaRoute,
   accountsRoute,
 ]);

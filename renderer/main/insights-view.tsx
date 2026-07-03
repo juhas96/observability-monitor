@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Edit3, Plus, Trash2 } from "lucide-react";
+import { Download, Edit3, Plus, Trash2 } from "lucide-react";
 import {
   Badge,
   Button,
@@ -22,6 +22,7 @@ import {
 
 import { BarChart, LineChart, ProgressBar, type ChartPoint } from "./components/charts";
 import { providerLabel } from "./components/provider-meta";
+import { monitorApi } from "./ipc";
 import { useAccounts, useGroups } from "./hooks/use-accounts";
 import { useHistorySeries } from "./hooks/use-history";
 import { useProviders } from "./hooks/use-providers";
@@ -297,8 +298,20 @@ export function InsightsView() {
   const totalAttempts = totals.success + totals.failure;
   const successRate = totalAttempts > 0 ? totals.success / totalAttempts : null;
 
+  const exportEvents = async () => {
+    try {
+      const result = await monitorApi.exportHistory({ dataset: "events", format: "csv" });
+      if (result.ok) toast.success("History exported.");
+    } catch (error) {
+      toast.error(String(error));
+    }
+  };
+
   const actions = (
     <div className="flex items-center gap-2">
+      <Button variant="glass" size="large" onClick={exportEvents}>
+        <Download className="size-4" /> Export
+      </Button>
       <Select value={range} onValueChange={(value) => setRange(value as HistoryRange)}>
         <SelectTrigger variant="glass" size="large"><SelectValue /></SelectTrigger>
         <SelectContent>

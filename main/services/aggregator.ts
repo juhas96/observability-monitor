@@ -7,6 +7,7 @@ import type {
   Account,
   AccountStaleness,
   AggregateSnapshot,
+  HttpCheckResult,
   MetricsSummary,
   MonitorItem,
   NormalizedStatus,
@@ -31,6 +32,7 @@ const deepLinksByAccount = new Map<string, ProviderDeepLink[]>();
 const perAccount = new Map<string, PerAccountStatus>();
 let knownAccounts: Account[] = [];
 let knownGroups: ProjectGroup[] = [];
+let lastCheckResults: HttpCheckResult[] = [];
 
 /** Priority for computing the worst/most-relevant aggregate status. */
 const STATUS_PRIORITY: NormalizedStatus[] = [
@@ -178,6 +180,11 @@ function uniqueByUid<T extends { uid: string }>(rows: T[]): T[] {
 export function setKnownAccounts(accounts: Account[], groups: ProjectGroup[] = knownGroups): void {
   knownAccounts = accounts;
   knownGroups = groups;
+}
+
+/** Latest uptime-check results, included in every snapshot. */
+export function setCheckResults(results: HttpCheckResult[]): void {
+  lastCheckResults = results;
 }
 
 export function setAccountData(
@@ -348,6 +355,7 @@ export function buildSnapshot(): AggregateSnapshot {
     deepLinks,
     staleness,
     perAccount: perAccountObj,
+    checks: lastCheckResults,
     aggregateStatus: worstStatus(allItems),
     generatedAt,
   };

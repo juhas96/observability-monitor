@@ -1,92 +1,91 @@
-# Plan: Turn Multi Monitor into a full observability platform
+# Plan: PostHog provider + next observability platform features
 
 ## Context
 
-Multi Monitor today is a strong **monitoring aggregator**: 12 provider adapters, background polling, a normalized dashboard, tray, notifications, and a Grafana console. But every snapshot lives **in-memory only** (`aggregator.ts` uses `Map`s; nothing is persisted across restarts), so the app can only ever answer "what is happening right now." A real observability *platform* answers "what happened over time, why, and are we meeting our targets."
+The four observability features from the prior plan are **verified complete and correct**: `npm run type-check` and `npm run lint` both pass (exit 0); history persistence (`history-store.ts`, recorded in `poller.ts` after `buildSnapshot()`), triage/silence wired into `notifier.ts`, three routed views (`/insights`, `/incidents`, `/timeline`), `recharts` charts using semantic color vars, and correct SLO/error-budget math are all in place with no placeholders or TODOs.
 
-The user selected all four gaps to close:
-1. **Metrics dashboards & trends** — charts of success/failure, deploy frequency, alert volume over time.
-2. **Unified alert & incident center** — cross-provider triage inbox with acknowledge/silence + per-incident timeline.
-3. **SLO & error-budget tracking** — user-defined SLOs with burn-rate charts.
-4. **Correlation timeline** — deploys/alerts/incidents/failures overlaid on one timeline.
+This plan adds a new provider and the next platform capabilities the user selected:
+- **PostHog provider** — surface error-tracking issues/exceptions (mirrors the Sentry adapter).
+- **Uptime / synthetic checks** — actively probe HTTP endpoints, record up/down + latency.
+- **Custom alerting rules** — user threshold rules that fire notifications.
+- **Scheduled digests & export** — daily/weekly summaries + CSV/JSON export.
+- **Slack / webhook notifications** — forward events to a webhook (shared infra).
 
-All four depend on one missing keystone: **a persisted history of poll samples and discrete events.** So the plan is a shared foundation (Phase 0) plus four features that build on it. This is a large, multi-phase effort — intended to be delivered and reviewed phase by phase, not all at once.
+This is large; deliver phase by phase. **Slack/webhook dispatch is shared infrastructure** that both alerting rules and digests reuse, so it comes early.
 
-## Foundation — Phase 0: History persistence (keystone)
+## Phase 1 — PostHog provider (smallest, self-contained)
 
-New backend service `main/services/history-store.ts` backed by the existing `DataStore` pattern (`data-store.ts`), file `history.json` in userData. Persists two rolling datasets with retention + downsampling (default keep 14 days; cap samples at ~4000, events at ~2000):
+New `main/services/providers/posthog.ts`, modeled directly on `main/services/providers/sentry.ts`:
+- **Fields:** `token` (password/secret, `phx_…` personal API key), `region` (text: `us`/`eu`, maps to base host), `projectId` (text, required). Region → base URL `https://us.posthog.com` or `https://eu.posthog.com` (private endpoints).
+- **Auth:** `Authorization: Bearer <token>`.
+- **`validate`:** `GET /api/users/@me/` (or `/api/projects/{projectId}/`) → return identity (user/org name).
+- **`fetch`:** list unresolved error-tracking issues via `GET /api/projects/{projectId}/error_tracking/issues/` (fallback: HogQL `POST /api/projects/{projectId}/query/` counting recent `$exception` events if that path 404s). Map each to a `MonitorItem` `category: "issue"`, status by resolution/severity, `url` = PostHog issue deep link.
+- **`fetchIncidents` / `fetchSignals`:** same shape as Sentry (unresolved → open incident + signal).
 
-- **Samples** — one row per poll cycle: `{ ts, aggregateStatus, perAccount: {id: {counts by status}}, perService: {id: status}, openIncidentCount, alertCount, failureCount, successCount }`. Feeds trend charts + SLO ratios.
-- **Events** — discrete occurrences with `{ id, ts, type: "deploy"|"failure"|"recovery"|"alert"|"incident", provider, accountId, groupId?, title, status, severity, url }`. Feeds the correlation timeline + incident detail.
+Wiring (data-driven — same 4 touch-points as any provider):
+- Add `"posthog"` to the `Provider` union in **both** `main/services/types.ts` and `renderer/main/types.ts`.
+- Register in `main/services/providers/index.ts`.
+- Add icon + label in `renderer/main/components/provider-meta.tsx` (lucide `Bug` or `Activity`, no brand glyph).
+- Dialog, filters, poller, history are all data-driven — no further changes.
 
-Recording hook: in `poller.ts` `runCycle()`, immediately after `aggregator.buildSnapshot()` (line ~77), call `history.record(snapshot, transitions)`.
-- Derive **failure/recovery** events from the existing `detectTransitions(snapshot.items)` result (reuse `diff-engine.ts` — already computes status changes; no duplicate logic).
-- Derive **deploy** events from items with `category` in `deploy`/`release`.
-- Derive **alert/incident** events from `snapshot.signals` (kind `alert`) and `snapshot.incidents`.
-- De-dupe events by a stable key (`type:accountId:sourceUid:ts-bucket`) so re-polls don't double-write.
+## Phase 2 — Notification channels + dispatch (shared infra)
 
-New IPC handler `main/handlers/history.ts` registered in `main/index.ts` alongside the others:
-- `history:getSeries` → `{ range }` → downsampled sample series (bucketed to the range).
-- `history:getEvents` → `{ range, groupId?, provider?, types? }` → filtered events.
-- `history:listSlos` / `history:saveSlo` / `history:deleteSlo` → SLO CRUD (see Phase 3).
-- `history:getSloStatus` → `{ range }` → computed SLO compliance + budget.
+Foundation reused by Phases 4 and 5.
+- **Store:** `main/services/channels-store.ts` → `channels.json`: `Channel = { id, type: "slack"|"webhook", name, enabled, events: string[] }`. The webhook **URL is sensitive** → store it via the existing `token-store.ts`/safeStorage keyed by `channel:{id}`; keep only non-secret meta in `channels.json` (mirrors how account secrets are split today).
+- **Dispatch:** `main/services/dispatch.ts` → `dispatch(event)` POSTs to each enabled channel: Slack incoming webhook payload `{ text }`; generic webhook gets the JSON event. Timeout + error-swallow (never break the poll cycle). No OAuth — a Slack **incoming webhook URL** is just a URL.
+- **Hook:** call `dispatch()` from `notifier.ts` alongside native notifications (respecting the same silence/settings gates already there).
+- **IPC:** `main/handlers/channels.ts` → `channels:list/save/delete/test`. Register in `main/handlers/index.ts`.
+- **UI:** a "Notifications" section (extend the existing settings surface / add to `/accounts` or a new settings view) to add/test channels and pick which events forward.
 
-Renderer contract: extend `renderer/main/types.ts` with `HistorySample`, `HistoryEvent`, `SloDefinition`, `SloStatus`; add typed wrappers in `renderer/main/ipc.ts`; add React Query hooks in `renderer/main/hooks/` (`use-history.ts`, `use-slos.ts`) subscribing to the existing `monitor:snapshot` push to invalidate.
+## Phase 3 — Uptime / synthetic checks (new `/uptime` route)
 
-Charting: add `recharts` to `.glaze-sources/package.json` (mature, complies with the managed npm min-release-age policy) via `npm install --include=dev`. If the install is blocked, fall back to a small hand-rolled SVG line/bar component in `renderer/main/components/charts/`. All charts must use design-system semantic colors (per `glaze-component-patterns` / `glaze-theming`), not raw palette values.
+- **Store:** `main/services/checks-store.ts` → `checks.json`: `HttpCheck = { id, name, url, method, expectedStatus?, timeoutMs?, groupId?, enabled }` (no secret).
+- **Runner:** `main/services/checks-runner.ts` → for each enabled check, `fetch` with `AbortController` timeout, measure latency, classify up/down vs `expectedStatus`. Run inside `poller.ts` `runCycle()` (after account batch, before `buildSnapshot()`).
+- **Snapshot integration:** add a dedicated `checks: HttpCheckResult[]` array to `AggregateSnapshot` (keeps synthetic checks out of the account-keyed maps). Record each result into history — extend `history-store.ts` with a `check` event type and a **latency series** per check so trends/sparklines work. (Reuse existing series downsampling.)
+- **IPC:** `main/handlers/checks.ts` → `checks:list/save/delete/getLatencySeries`. Register it.
+- **UI:** `renderer/main/uptime-view.tsx` + route in `router.tsx` + nav item in `root-view.tsx` (`Globe`/`Radio`). List checks with up/down `Status`, latency sparkline (reuse `components/charts.tsx`), uptime %, and an add/edit dialog (reuse `add-account-dialog.tsx` patterns). Types + `hooks/use-checks.ts`.
 
-## Feature 1 — Metrics dashboards & trends (new `/insights` route)
+## Phase 4 — Custom alerting rules (new `/alerts` route or Insights section)
 
-- New `renderer/main/insights-view.tsx` + route in `router.tsx` + nav item in `root-view.tsx` (`NAV_ITEMS`, e.g. `LineChart` icon).
-- Time-range selector (reuse the 15m/1h/6h/24h pattern already in `grafana-view.tsx`).
-- Charts from `history:getSeries`: success-vs-failure rate over time (stacked area), deploy frequency (bar), alert volume (line), plus per-provider/per-group breakdown cards. Filters mirror the dashboard's group/provider filters (persist to localStorage like `dashboard.*` keys).
+- **Store:** `main/services/rules-store.ts` → `rules.json`: `AlertRule = { id, name, scope: {groupId?|accountId?|provider?|checkId?}, metric: "failureRate"|"latency"|"errorBudgetBurn"|"statusIs", operator, threshold, windowMinutes, enabled, channelIds? }`.
+- **Engine:** `main/services/rules-engine.ts` → after `history.record()` in `runCycle()`, evaluate each rule against the latest snapshot + history window; maintain per-rule firing state (pattern mirrors `diff-engine.ts`) so a rule alerts on **transition** into/out of breach, not every cycle. On fire → native notification + `dispatch()` to the rule's channels, and write a `HistoryEvent` (`type: "alert"`) so fired rules appear in `/incidents` and `/timeline`.
+- **IPC:** `main/handlers/rules.ts` → `rules:list/save/delete/getState`. Register it.
+- **UI:** `renderer/main/alerts-view.tsx` + route + nav item (`BellPlus`), with a rule create/edit dialog and current firing state. Types + `hooks/use-rules.ts`.
 
-## Feature 2 — Unified alert & incident center (new `/incidents` route)
+## Phase 5 — Scheduled digests & export
 
-- New `renderer/main/incidents-view.tsx` + route + nav item (`BellRing`/`Siren`).
-- Consolidates `snapshot.signals` + `snapshot.incidents` (already in the live snapshot) into one triage list with filters: severity, provider, status, group.
-- **Acknowledge / silence**: local state persisted via a new `main/services/triage-store.ts` (`triage.json`: `{ [signalUid]: { acknowledgedAt?, silencedUntil? } }`) exposed through the history handler or a small `triage.ts` handler. Silenced items are also suppressed from notifications (`notifier.ts` consults the store).
-- **Incident detail**: side panel showing that incident's `HistoryEvent` timeline (from `history:getEvents` filtered to the account/source), with open-in-browser deep links.
-
-## Feature 3 — SLO & error-budget tracking
-
-- SLO definitions persisted in `history-store.ts` (or sibling `slo-store.ts`): `{ id, name, scope: {groupId?|accountId?|provider?}, target (e.g. 99.0), windowDays }`.
-- Compute compliance in the backend from persisted **samples**: success ratio = successCount / (successCount+failureCount) over the window; error budget = `1 - target`; burn rate vs. elapsed budget. Return via `history:getSloStatus`.
-- UI: an **SLOs** section on the `/insights` view — per-SLO card with current compliance %, remaining error budget, and a burn-down chart; plus a create/edit dialog (reuse `Dialog`/`Field`/`Select` as in `add-account-dialog.tsx`). Warning badge when budget is at risk.
-
-## Feature 4 — Correlation timeline (new `/timeline` route)
-
-- New `renderer/main/timeline-view.tsx` + route + nav item (`GitCommitHorizontal`/`Activity`).
-- Horizontal time axis over the selected range; swimlanes per group (or provider). Renders `HistoryEvent`s as markers: deploys as vertical rules, failures/alerts/incidents as dots colored by severity — so a deploy immediately followed by failures is visually obvious.
-- Hover shows event detail; click opens the deep link. Range + filters shared with insights.
+- **Digest scheduler:** `main/services/digest-scheduler.ts` → timer (like `poller.ts`) that, at the configured cadence (daily/weekly + hour), builds a summary from `history-store` (incidents, deploys, failure rate, SLO status, worst checks) → native notification + optional `dispatch()`. Extend `MonitorSettings` (`main/services/types.ts` `DEFAULT_SETTINGS`) with `digest: { enabled, cadence, hour }`; start/stop the timer with the poller lifecycle in `main/index.ts` (clean up on `before-quit`).
+- **Export:** add `history:export` to `main/handlers/history.ts` → serialize samples/events to CSV or JSON, use `dialog.showSaveDialog` (from `@glaze/core/backend`) + `fs` to write the chosen path. UI: "Export…" button on `/insights` (and/or `/timeline`).
+- **UI:** digest cadence controls in the settings/notifications section from Phase 2.
 
 ## Critical files
 
-- **New backend:** `main/services/history-store.ts`, `main/services/triage-store.ts`, `main/handlers/history.ts` (+ optional `triage.ts`).
-- **Edit backend:** `main/services/poller.ts` (record hook), `main/services/notifier.ts` (respect silence), `main/index.ts` (register handler), `main/services/types.ts` (new types).
-- **New frontend:** `renderer/main/insights-view.tsx`, `incidents-view.tsx`, `timeline-view.tsx`, `components/charts/*`, `hooks/use-history.ts`, `hooks/use-slos.ts`, `hooks/use-triage.ts`.
-- **Edit frontend:** `renderer/main/router.tsx`, `root-view.tsx` (nav), `types.ts`, `ipc.ts`.
-- **Config:** `package.json` (add `recharts`).
+- **New backend:** `providers/posthog.ts`, `channels-store.ts`, `dispatch.ts`, `checks-store.ts`, `checks-runner.ts`, `rules-store.ts`, `rules-engine.ts`, `digest-scheduler.ts`, handlers `channels.ts` / `checks.ts` / `rules.ts`.
+- **Edit backend:** `providers/index.ts`, `main/services/types.ts` (Provider union, `AggregateSnapshot.checks`, new event/series types, `MonitorSettings.digest`), `poller.ts` (run checks + rules engine), `notifier.ts` (dispatch), `history-store.ts` (check events + latency series, export helpers), `handlers/index.ts`, `handlers/history.ts` (export), `main/index.ts` (digest lifecycle).
+- **New frontend:** `uptime-view.tsx`, `alerts-view.tsx`, `hooks/use-checks.ts`, `use-rules.ts`, `use-channels.ts`, channel/rule/check dialogs.
+- **Edit frontend:** `router.tsx`, `root-view.tsx` (nav), `types.ts`, `ipc.ts`, `provider-meta.tsx`, insights/settings views (export button, notification/digest settings).
 
 ## Reused patterns (do not re-invent)
 
-- `DataStore<T>` (`data-store.ts`) for all new JSON persistence.
-- `detectTransitions` (`diff-engine.ts`) for failure/recovery events — do not write parallel transition logic.
-- Existing snapshot push (`push.ts` `monitor:snapshot`) to trigger renderer refetch.
-- Range selector + dense card layout from `grafana-view.tsx`; dialog/field patterns from `add-account-dialog.tsx`; localStorage filter persistence from `dashboard-view.tsx`.
-- Data-driven provider metadata from `provider-meta.tsx` for icons/labels in every new view.
+- `sentry.ts` as the PostHog adapter template; `DataStore<T>` for all new stores; `token-store.ts`/safeStorage split for the webhook secret.
+- `diff-engine.ts` firing-state pattern for the rules engine (transition-based, no duplicate alerts).
+- `poller.ts` timer/lifecycle pattern for the digest scheduler; existing series downsampling in `history-store.ts` for check latency.
+- `components/charts.tsx` for latency sparklines; `add-account-dialog.tsx` for all new CRUD dialogs; localStorage filter persistence from `dashboard-view.tsx`.
+- `@glaze/core/backend` `dialog`/`shell` for save-export (confirm each is exported before use).
 
 ## Skills to invoke during implementation
 
-`glaze-data-storage` (history/triage/SLO stores), `glaze-backend-rules` + `glaze-ipc-communication` (handler + channels), `glaze-frontend-rules` + `glaze-component-patterns` (new views), `glaze-theming`/`glaze-icon-usage` (chart colors + nav icons).
+`glaze-external-api` (PostHog, HTTP checks, webhook dispatch), `glaze-backend-performance` (fetch timeouts, latency series IPC payloads), `glaze-data-storage` (new stores + secret split), `glaze-backend-rules` + `glaze-ipc-communication` (handlers/channels), `glaze-app-lifecycle` (scheduler cleanup on quit), `glaze-frontend-rules` + `glaze-component-patterns` + `glaze-icon-usage` (new views/nav/charts).
 
 ## Suggested delivery order
 
-Phase 0 (foundation) → Feature 1 (insights/trends) → Feature 2 (incident center) → Feature 3 (SLOs) → Feature 4 (timeline). Each phase is independently buildable and reviewable; history needs to accumulate a few poll cycles before trend/SLO charts show meaningful data.
+Phase 1 (PostHog) → Phase 2 (channels/dispatch) → Phase 3 (uptime checks) → Phase 4 (alerting rules) → Phase 5 (digests/export). Each phase is independently buildable and reviewable.
 
 ## Verification
 
 - After each phase: `npm run type-check && npm run lint`, then build for runtime validation.
-- Foundation: confirm `history.json` appears in userData and grows across poll cycles; verify events de-dupe (no duplicate rows on repeated polls of unchanged items).
-- Insights/SLOs/timeline: with at least one connected account, let polling run several cycles, then confirm charts/timeline populate and range/filter selectors work (DOM inspection of the running app).
-- Incident center: acknowledge/silence persists across restart; silenced items produce no notification.
+- **PostHog:** add an account with a real `phx_…` key; confirm `validate` returns identity and issues appear on the dashboard + `/incidents`.
+- **Channels:** "Test" button posts to a real Slack/webhook URL; confirm delivery; verify the URL is stored via safeStorage (not plaintext in `channels.json`).
+- **Uptime:** add an HTTP check; confirm up/down + latency populate over several poll cycles and the sparkline renders (DOM inspection of the running app).
+- **Rules:** create a rule that breaches; confirm a single notification + channel dispatch on transition (not every cycle) and a matching `/incidents` + `/timeline` entry.
+- **Digest/export:** trigger a digest; confirm summary notification; export produces a valid CSV/JSON at the chosen path.

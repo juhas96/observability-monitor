@@ -7,16 +7,18 @@
 import { logger } from "@glaze/core/backend";
 
 import * as aggregator from "./aggregator.js";
+import { runChecks } from "./checks-runner.js";
 import { detectTransitions, forgetAccount } from "./diff-engine.js";
 import * as registry from "./providers/index.js";
 import * as history from "./history-store.js";
 import { notifyTransitions } from "./notifier.js";
 import { pushAccountError, pushPollingState, pushSnapshot } from "./push.js";
+import { evaluateRules } from "./rules-engine.js";
 import { getSettings } from "./settings-store.js";
 import { getToken } from "./token-store.js";
 import { listAccounts, listGroups, updateAccount } from "./accounts-store.js";
 import { updateTray } from "./tray-controller.js";
-import type { Account, AggregateSnapshot } from "./types.js";
+import type { Account, AggregateSnapshot, HttpCheckResult } from "./types.js";
 
 const CONCURRENCY = 4;
 
@@ -75,12 +77,21 @@ export async function runCycle(onlyAccountId?: string): Promise<AggregateSnapsho
 
     await runInBatches(targets);
 
+    // Uptime checks run on full cycles only; a single-account refresh keeps the
+    // last results (and skips recording duplicate latency samples).
+    let checkResults: HttpCheckResult[] = [];
+    if (!onlyAccountId) {
+      checkResults = await runChecks();
+      aggregator.setCheckResults(checkResults);
+    }
+
     const snapshot = aggregator.buildSnapshot();
 
     const settings = await getSettings();
     const transitions = detectTransitions(snapshot.items);
-    await history.record(snapshot, transitions);
+    await history.record(snapshot, transitions, checkResults);
     if (transitions.length > 0) await notifyTransitions(transitions, settings);
+    await evaluateRules(snapshot);
 
     updateTray(snapshot);
     pushSnapshot(snapshot);

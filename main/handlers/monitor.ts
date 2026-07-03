@@ -8,6 +8,7 @@ import { ipcMain, shell, logger } from "@glaze/core/backend";
 import * as aggregator from "../services/aggregator.js";
 import { getAccount, listAccounts, listGroups } from "../services/accounts-store.js";
 import * as poller from "../services/poller.js";
+import * as digest from "../services/digest-scheduler.js";
 import * as registry from "../services/providers/index.js";
 import { getSettings, updateSettings } from "../services/settings-store.js";
 import { getToken, isEncryptionAvailable } from "../services/token-store.js";
@@ -68,6 +69,7 @@ export function registerMonitorHandlers(): void {
     const next = await updateSettings(patch);
     ipcMain.broadcast("settings:monitor-changed", { value: next });
     await poller.reschedule();
+    await digest.reschedule();
     return next;
   });
 

@@ -13,7 +13,8 @@ export type Provider =
   | "pagerduty"
   | "statuspage"
   | "datadog"
-  | "honeycomb";
+  | "honeycomb"
+  | "posthog";
 
 export type MonitorCategory =
   | "run"
@@ -212,8 +213,17 @@ export interface AggregateSnapshot {
   deepLinks: ProviderDeepLink[];
   staleness: Record<string, AccountStaleness>;
   perAccount: Record<string, PerAccountStatus>;
+  checks: HttpCheckResult[];
   aggregateStatus: NormalizedStatus;
   generatedAt: string;
+}
+
+export type DigestCadence = "daily" | "weekly";
+
+export interface DigestSettings {
+  enabled: boolean;
+  cadence: DigestCadence;
+  hour: number;
 }
 
 export interface MonitorSettings {
@@ -222,11 +232,12 @@ export interface MonitorSettings {
   notifyOnSuccess: boolean;
   notifyOnlyOnChange: boolean;
   soundOnNotify: boolean;
+  digest: DigestSettings;
 }
 
 export type HistoryRange = "15m" | "1h" | "6h" | "24h" | "7d" | "14d";
 
-export type HistoryEventType = "deploy" | "failure" | "recovery" | "alert" | "incident";
+export type HistoryEventType = "deploy" | "failure" | "recovery" | "alert" | "incident" | "check";
 
 export interface HistoryStatusCounts {
   success: number;
@@ -298,6 +309,92 @@ export interface SloStatus {
 export interface TriageState {
   acknowledgedAt?: string;
   silencedUntil?: string;
+}
+
+export interface HttpCheck {
+  id: string;
+  name: string;
+  url: string;
+  method: string;
+  expectedStatus?: number;
+  timeoutMs?: number;
+  groupId?: string;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface HttpCheckInput {
+  id?: string;
+  name: string;
+  url: string;
+  method?: string;
+  expectedStatus?: number;
+  timeoutMs?: number;
+  groupId?: string;
+  enabled?: boolean;
+}
+
+export interface HttpCheckResult {
+  checkId: string;
+  name: string;
+  url: string;
+  groupId?: string;
+  ok: boolean;
+  statusCode?: number;
+  latencyMs: number;
+  error?: string;
+  checkedAt: string;
+}
+
+export interface CheckLatencyPoint {
+  ts: string;
+  latencyMs: number | null;
+  ok: boolean;
+}
+
+export interface CheckSeries {
+  points: CheckLatencyPoint[];
+  uptime: number | null;
+  avgLatencyMs: number | null;
+}
+
+export type RuleMetric = "failureRate" | "latency" | "openIncidents";
+export type RuleOperator = "gt" | "lt";
+
+export interface RuleScope {
+  groupId?: string;
+  accountId?: string;
+  provider?: Provider;
+  checkId?: string;
+}
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  metric: RuleMetric;
+  operator: RuleOperator;
+  threshold: number;
+  scope: RuleScope;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertRuleInput {
+  id?: string;
+  name: string;
+  metric: RuleMetric;
+  operator: RuleOperator;
+  threshold: number;
+  scope: RuleScope;
+  enabled?: boolean;
+}
+
+export interface RuleState {
+  ruleId: string;
+  firing: boolean;
+  value: number | null;
+  since?: string;
 }
 
 export interface MonitorStatus {

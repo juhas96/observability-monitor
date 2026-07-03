@@ -9,6 +9,12 @@ import type {
   GrafanaOverview,
   GrafanaRange,
   GrafanaTraceResult,
+  AlertRule,
+  AlertRuleInput,
+  RuleState,
+  CheckSeries,
+  HttpCheck,
+  HttpCheckInput,
   HistoryEvent,
   HistoryEventType,
   HistoryRange,
@@ -64,6 +70,19 @@ export const monitorApi = {
     invoke<SloDefinition>("history:saveSlo", req),
   deleteSlo: (id: string) => invoke<{ ok: true }>("history:deleteSlo", { id }),
   getSloStatus: () => invoke<SloStatus[]>("history:getSloStatus"),
+  exportHistory: (req: { dataset: "events" | "samples"; format: "csv" | "json" }) =>
+    invoke<{ ok: boolean; filePath?: string }>("history:export", req),
+
+  listChecks: () => invoke<HttpCheck[]>("checks:list"),
+  saveCheck: (req: HttpCheckInput) => invoke<HttpCheck>("checks:save", req),
+  deleteCheck: (id: string) => invoke<{ ok: true }>("checks:delete", { id }),
+  getCheckLatencySeries: (req: { checkId: string; range: HistoryRange }) =>
+    invoke<CheckSeries>("checks:getLatencySeries", req),
+
+  listRules: () => invoke<AlertRule[]>("rules:list"),
+  saveRule: (req: AlertRuleInput) => invoke<AlertRule>("rules:save", req),
+  deleteRule: (id: string) => invoke<{ ok: true }>("rules:delete", { id }),
+  getRuleStates: () => invoke<RuleState[]>("rules:getState"),
 
   listTriage: () => invoke<Record<string, TriageState>>("triage:list"),
   acknowledgeTriage: (uid: string) => invoke<TriageState>("triage:acknowledge", { uid }),

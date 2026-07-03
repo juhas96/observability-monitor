@@ -17,7 +17,8 @@ export type Provider =
   | "pagerduty"
   | "statuspage"
   | "datadog"
-  | "honeycomb";
+  | "honeycomb"
+  | "posthog";
 
 /** Broad display category used to pick a row icon/label; providers set it per item. */
 export type MonitorCategory =
@@ -223,8 +224,17 @@ export interface AggregateSnapshot {
   deepLinks: ProviderDeepLink[];
   staleness: Record<string, AccountStaleness>;
   perAccount: Record<string, PerAccountStatus>;
+  checks: HttpCheckResult[];
   aggregateStatus: NormalizedStatus;
   generatedAt: string;
+}
+
+export type DigestCadence = "daily" | "weekly";
+
+export interface DigestSettings {
+  enabled: boolean;
+  cadence: DigestCadence;
+  hour: number; // 0-23 local hour to deliver the digest
 }
 
 export interface MonitorSettings {
@@ -233,11 +243,12 @@ export interface MonitorSettings {
   notifyOnSuccess: boolean;
   notifyOnlyOnChange: boolean;
   soundOnNotify: boolean;
+  digest: DigestSettings;
 }
 
 export type HistoryRange = "15m" | "1h" | "6h" | "24h" | "7d" | "14d";
 
-export type HistoryEventType = "deploy" | "failure" | "recovery" | "alert" | "incident";
+export type HistoryEventType = "deploy" | "failure" | "recovery" | "alert" | "incident" | "check";
 
 export interface HistoryStatusCounts {
   success: number;
@@ -311,12 +322,140 @@ export interface TriageState {
   silencedUntil?: string;
 }
 
+/** A user-defined HTTP uptime/synthetic check (no secret). */
+export interface HttpCheck {
+  id: string;
+  name: string;
+  url: string;
+  method: string; // GET | HEAD | POST
+  expectedStatus?: number; // exact status to treat as up; otherwise any < 400 is up
+  timeoutMs?: number;
+  groupId?: string;
+  enabled: boolean;
+  createdAt: string;
+}
+
+/** Save payload for a check from the renderer. */
+export interface HttpCheckInput {
+  id?: string;
+  name: string;
+  url: string;
+  method?: string;
+  expectedStatus?: number;
+  timeoutMs?: number;
+  groupId?: string;
+  enabled?: boolean;
+}
+
+/** Result of probing a single check during a poll cycle. */
+export interface HttpCheckResult {
+  checkId: string;
+  name: string;
+  url: string;
+  groupId?: string;
+  ok: boolean;
+  statusCode?: number;
+  latencyMs: number;
+  error?: string;
+  checkedAt: string;
+}
+
+/** One downsampled latency point for a check's history chart. */
+export interface CheckLatencyPoint {
+  ts: string;
+  latencyMs: number | null;
+  ok: boolean;
+}
+
+/** Latency series + summary stats for a single check over a range. */
+export interface CheckSeries {
+  points: CheckLatencyPoint[];
+  uptime: number | null; // 0..1 over the range
+  avgLatencyMs: number | null;
+}
+
+/** Metric a custom alerting rule evaluates against the latest snapshot. */
+export type RuleMetric = "failureRate" | "latency" | "openIncidents";
+export type RuleOperator = "gt" | "lt";
+
+export interface RuleScope {
+  groupId?: string;
+  accountId?: string;
+  provider?: Provider;
+  checkId?: string;
+}
+
+/** A user-defined threshold rule that fires notifications when breached. */
+export interface AlertRule {
+  id: string;
+  name: string;
+  metric: RuleMetric;
+  operator: RuleOperator;
+  threshold: number;
+  scope: RuleScope;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertRuleInput {
+  id?: string;
+  name: string;
+  metric: RuleMetric;
+  operator: RuleOperator;
+  threshold: number;
+  scope: RuleScope;
+  enabled?: boolean;
+}
+
+/** Current evaluation state of a rule, exposed to the renderer. */
+export interface RuleState {
+  ruleId: string;
+  firing: boolean;
+  value: number | null;
+  since?: string;
+}
+
 export const DEFAULT_SETTINGS: MonitorSettings = {
   pollIntervalSeconds: 60,
   notifyOnFailure: true,
   notifyOnSuccess: false,
   notifyOnlyOnChange: true,
   soundOnNotify: false,
+  digest: { enabled: false, cadence: "daily", hour: 9 },
 };
 
 export const MIN_POLL_INTERVAL_SECONDS = 30;
+
+/** Notification channel that forwards events to a Slack incoming webhook or generic webhook. */
+export type ChannelType = "slack" | "webhook";
+
+/** Event categories a channel can subscribe to. */
+export type DispatchEventKind = "failure" | "success" | "alert" | "digest";
+
+/** Non-secret channel metadata persisted in channels.json — the URL lives in the encrypted vault. */
+export interface Channel {
+  id: string;
+  type: ChannelType;
+  name: string;
+  enabled: boolean;
+  events: DispatchEventKind[];
+}
+
+/** Save payload from the renderer; `url` is optional so edits can keep the stored secret. */
+export interface ChannelInput {
+  id?: string;
+  type: ChannelType;
+  name: string;
+  enabled: boolean;
+  events: DispatchEventKind[];
+  url?: string;
+}
+
+/** A single event forwarded to enabled channels. */
+export interface DispatchEvent {
+  kind: DispatchEventKind;
+  title: string;
+  body?: string;
+  url?: string;
+}

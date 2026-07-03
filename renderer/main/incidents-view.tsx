@@ -120,6 +120,8 @@ function eventIcon(event: HistoryEvent): string {
       return "Alert";
     case "incident":
       return "Incident";
+    case "check":
+      return "Check";
   }
 }
 

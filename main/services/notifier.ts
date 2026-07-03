@@ -6,6 +6,7 @@
 import { Notification, shell, logger } from "@glaze/core/backend";
 
 import type { StatusTransition } from "./diff-engine.js";
+import { dispatch } from "./dispatch.js";
 import { isSilenced } from "./triage-store.js";
 import type { MonitorSettings } from "./types.js";
 
@@ -23,7 +24,7 @@ function providerLabel(kind: string): string {
 }
 
 export async function notifyTransitions(transitions: StatusTransition[], settings: MonitorSettings): Promise<void> {
-  if (!Notification.isSupported()) return;
+  const nativeSupported = Notification.isSupported();
 
   for (const t of transitions) {
     const isFailure = t.next === "failure";
@@ -40,22 +41,33 @@ export async function notifyTransitions(transitions: StatusTransition[], setting
 
     const title = isFailure ? `❌ ${t.item.title}` : `✅ ${t.item.title}`;
     const body = [t.item.subtitle, t.item.commitMessage].filter(Boolean).join(" — ");
+    const bodyText = body || (isFailure ? "Run failed" : "Run succeeded");
 
-    try {
-      const notification = new Notification({
-        title,
-        subtitle: providerLabel(t.item.kind),
-        body: body || (isFailure ? "Run failed" : "Run succeeded"),
-        silent: !settings.soundOnNotify,
-      });
-      notification.on("click", () => {
-        void shell.openExternal(t.item.url).catch((err) => {
-          logger.warn("notifier", "Failed to open URL from notification", { err: String(err) });
+    if (nativeSupported) {
+      try {
+        const notification = new Notification({
+          title,
+          subtitle: providerLabel(t.item.kind),
+          body: bodyText,
+          silent: !settings.soundOnNotify,
         });
-      });
-      notification.show();
-    } catch (err) {
-      logger.warn("notifier", "Failed to show notification", { err: String(err) });
+        notification.on("click", () => {
+          void shell.openExternal(t.item.url).catch((err) => {
+            logger.warn("notifier", "Failed to open URL from notification", { err: String(err) });
+          });
+        });
+        notification.show();
+      } catch (err) {
+        logger.warn("notifier", "Failed to show notification", { err: String(err) });
+      }
     }
+
+    // Forward to configured Slack/webhook channels (never throws into the poll cycle).
+    void dispatch({
+      kind: isFailure ? "failure" : "success",
+      title: `${isFailure ? "Failure" : "Success"}: ${t.item.title}`,
+      body: bodyText,
+      url: t.item.url,
+    });
   }
 }

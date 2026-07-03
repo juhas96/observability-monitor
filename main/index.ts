@@ -14,6 +14,7 @@ import { registerHandlers } from "./handlers/index.js";
 import { getPreloadPath, getWindowUrl } from "./windows/window-paths.js";
 import { openSettingsWindow } from "./windows/settings-window.js";
 import * as poller from "./services/poller.js";
+import * as digest from "./services/digest-scheduler.js";
 import { initTray } from "./services/tray-controller.js";
 
 // Get directory paths
@@ -206,6 +207,7 @@ app.on("activate", (hasVisibleWindows) => {
 app.on("before-quit", () => {
   logger.info("main", "App before-quit, cleaning up...");
   poller.stop();
+  digest.stop();
 });
 
 // ── App ready ─────────────────────────────────────────────────────────
@@ -246,5 +248,9 @@ app.whenReady().then(async () => {
 
   poller.start().catch((error) => {
     logger.error("main", "Failed to start poller", error);
+  });
+
+  digest.start().catch((error) => {
+    logger.error("main", "Failed to start digest scheduler", error);
   });
 });

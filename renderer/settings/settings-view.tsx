@@ -21,6 +21,13 @@ import {
   toast,
 } from "@glaze/core/components";
 import type { NativeThemeInfo } from "@glaze/core/ipc";
+import { NotificationChannels } from "./notification-channels";
+
+interface DigestSettings {
+  enabled: boolean;
+  cadence: "daily" | "weekly";
+  hour: number;
+}
 
 interface MonitorSettings {
   pollIntervalSeconds: number;
@@ -28,7 +35,13 @@ interface MonitorSettings {
   notifyOnSuccess: boolean;
   notifyOnlyOnChange: boolean;
   soundOnNotify: boolean;
+  digest: DigestSettings;
 }
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, hour) => ({
+  value: String(hour),
+  label: `${String(hour).padStart(2, "0")}:00`,
+}));
 
 const INTERVAL_OPTIONS = [
   { value: "30", label: "30 seconds" },
@@ -97,6 +110,8 @@ export function SettingsView() {
       toast.error(`Failed to save settings: ${error}`);
     }
   };
+
+  const digest: DigestSettings = monitor?.digest ?? { enabled: false, cadence: "daily", hour: 9 };
 
   const handleThemeChange = async (value: string) => {
     const source = value as "system" | "light" | "dark";
@@ -192,6 +207,50 @@ export function SettingsView() {
             </Field>
           </FieldGroup>
         </FieldSet>
+
+        <FieldSet title="Digest">
+          <FieldGroup>
+            <Field label="Scheduled digest" description="Deliver a periodic summary of health, deploys, and incidents.">
+              <Switch
+                checked={digest.enabled}
+                onCheckedChange={(checked) => updateMonitor({ digest: { ...digest, enabled: checked } })}
+              />
+            </Field>
+            <Field label="Cadence" description="How often the digest is delivered.">
+              <Select
+                value={digest.cadence}
+                onValueChange={(value) => updateMonitor({ digest: { ...digest, cadence: value as "daily" | "weekly" } })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="daily">Daily</SelectItem>
+                  <SelectItem value="weekly">Weekly (Mondays)</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Delivery time" description="Local hour the digest is sent.">
+              <Select
+                value={String(digest.hour)}
+                onValueChange={(value) => updateMonitor({ digest: { ...digest, hour: Number(value) } })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {HOUR_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </FieldGroup>
+        </FieldSet>
+
+        <NotificationChannels />
       </div>
     </ScrollArea>
   );

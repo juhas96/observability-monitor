@@ -7,12 +7,15 @@ import { DataStore } from "./data-store.js";
 import type { StatusTransition } from "./diff-engine.js";
 import type {
   AggregateSnapshot,
+  CheckLatencyPoint,
+  CheckSeries,
   HistoryEvent,
   HistoryEventType,
   HistoryRange,
   HistorySample,
   HistorySampleAccount,
   HistoryStatusCounts,
+  HttpCheckResult,
   MonitorItem,
   NormalizedStatus,
   ObservabilitySeverity,
@@ -20,19 +23,28 @@ import type {
   SloStatus,
 } from "./types.js";
 
+interface CheckSampleRow {
+  checkId: string;
+  ts: string;
+  latencyMs: number;
+  ok: boolean;
+}
+
 interface HistoryData {
   version: 1;
   samples: HistorySample[];
   events: HistoryEvent[];
   slos: SloDefinition[];
+  checkSamples: CheckSampleRow[];
 }
 
-const DEFAULT_DATA: HistoryData = { version: 1, samples: [], events: [], slos: [] };
+const DEFAULT_DATA: HistoryData = { version: 1, samples: [], events: [], slos: [], checkSamples: [] };
 const store = new DataStore<HistoryData>("history.json", DEFAULT_DATA);
 
 const RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 const MAX_SAMPLES = 4000;
 const MAX_EVENTS = 2000;
+const MAX_CHECK_SAMPLES = 5000;
 const MAX_SERIES_POINTS = 180;
 
 const STATUS_ORDER: NormalizedStatus[] = [
@@ -231,7 +243,11 @@ function prune(data: HistoryData, nowMs = Date.now()): HistoryData {
     .filter((event) => new Date(event.ts).getTime() >= oldest)
     .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
     .slice(-MAX_EVENTS);
-  return { ...data, samples, events };
+  const checkSamples = (data.checkSamples ?? [])
+    .filter((sample) => new Date(sample.ts).getTime() >= oldest)
+    .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
+    .slice(-MAX_CHECK_SAMPLES);
+  return { ...data, samples, events, checkSamples };
 }
 
 function collapseSamples(samples: HistorySample[], bucketMs: number): HistorySample[] {
@@ -343,12 +359,67 @@ export function historyRange(value: unknown): HistoryRange {
   return normalizeRange(value);
 }
 
-export async function record(snapshot: AggregateSnapshot, transitions: StatusTransition[]): Promise<void> {
+export async function record(
+  snapshot: AggregateSnapshot,
+  transitions: StatusTransition[],
+  checkResults: HttpCheckResult[] = [],
+): Promise<void> {
   const data = prune(await store.load());
   const sample = sampleFromSnapshot(snapshot);
   const eventMap = new Map(data.events.map((event) => [event.id, event]));
   for (const event of eventsFromSnapshot(snapshot, transitions)) eventMap.set(event.id, event);
-  await store.save(prune({ ...data, samples: [...data.samples, sample], events: [...eventMap.values()] }));
+  const checkRows: CheckSampleRow[] = checkResults.map((result) => ({
+    checkId: result.checkId,
+    ts: result.checkedAt,
+    latencyMs: result.latencyMs,
+    ok: result.ok,
+  }));
+  await store.save(
+    prune({
+      ...data,
+      samples: [...data.samples, sample],
+      events: [...eventMap.values()],
+      checkSamples: [...data.checkSamples, ...checkRows],
+    }),
+  );
+}
+
+/** Append a single discrete event (e.g. a fired alerting rule), deduped by id. */
+export async function appendEvent(event: HistoryEvent): Promise<void> {
+  const data = prune(await store.load());
+  const eventMap = new Map(data.events.map((existing) => [existing.id, existing]));
+  eventMap.set(event.id, event);
+  await store.save(prune({ ...data, events: [...eventMap.values()] }));
+}
+
+export async function getCheckLatencySeries(checkId: string, range: HistoryRange): Promise<CheckSeries> {
+  const data = await store.load();
+  const start = rangeStart(range);
+  const rows = (data.checkSamples ?? []).filter((row) => row.checkId === checkId && new Date(row.ts).getTime() >= start);
+  if (rows.length === 0) return { points: [], uptime: null, avgLatencyMs: null };
+
+  const bucketMs = Math.max(60 * 1000, Math.ceil(RANGE_MS[range] / MAX_SERIES_POINTS));
+  const buckets = new Map<number, { latencies: number[]; ok: boolean }>();
+  for (const row of rows) {
+    const bucket = Math.floor(new Date(row.ts).getTime() / bucketMs) * bucketMs;
+    const entry = buckets.get(bucket) ?? { latencies: [], ok: true };
+    entry.latencies.push(row.latencyMs);
+    entry.ok = entry.ok && row.ok;
+    buckets.set(bucket, entry);
+  }
+  const points: CheckLatencyPoint[] = [...buckets.entries()]
+    .map(([bucket, entry]) => ({
+      ts: new Date(bucket).toISOString(),
+      latencyMs: entry.latencies.length
+        ? Math.round(entry.latencies.reduce((sum, value) => sum + value, 0) / entry.latencies.length)
+        : null,
+      ok: entry.ok,
+    }))
+    .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
+
+  const okCount = rows.filter((row) => row.ok).length;
+  const avgLatencyMs = Math.round(rows.reduce((sum, row) => sum + row.latencyMs, 0) / rows.length);
+  return { points, uptime: okCount / rows.length, avgLatencyMs };
 }
 
 export async function getSeries(range: HistoryRange): Promise<HistorySample[]> {
@@ -372,6 +443,14 @@ export async function getEvents(filters: {
     .filter((event) => !filters.provider || event.provider === filters.provider)
     .filter((event) => !filters.types?.length || filters.types.includes(event.type))
     .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
+}
+
+export async function getAllSamples(): Promise<HistorySample[]> {
+  return (await store.load()).samples;
+}
+
+export async function getAllEvents(): Promise<HistoryEvent[]> {
+  return (await store.load()).events;
 }
 
 export async function listSlos(): Promise<SloDefinition[]> {

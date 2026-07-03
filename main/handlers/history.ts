@@ -2,10 +2,14 @@
  * History and SLO IPC handlers.
  */
 
-import { ipcMain, logger } from "@glaze/core/backend";
+import * as fs from "fs/promises";
+
+import { dialog, ipcMain, logger } from "@glaze/core/backend";
 
 import {
   deleteSlo,
+  getAllEvents,
+  getAllSamples,
   getEvents,
   getSeries,
   getSloStatus,
@@ -13,7 +17,28 @@ import {
   listSlos,
   saveSlo,
 } from "../services/history-store.js";
-import type { HistoryEventType, Provider, SloDefinition } from "../services/types.js";
+import type { HistoryEvent, HistoryEventType, HistorySample, Provider, SloDefinition } from "../services/types.js";
+
+function csvCell(value: unknown): string {
+  const text = value == null ? "" : String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function eventsToCsv(events: HistoryEvent[]): string {
+  const header = ["id", "ts", "type", "provider", "accountId", "groupId", "title", "status", "severity", "url"];
+  const rows = events.map((e) =>
+    [e.id, e.ts, e.type, e.provider, e.accountId, e.groupId, e.title, e.status, e.severity, e.url].map(csvCell).join(","),
+  );
+  return [header.join(","), ...rows].join("\n");
+}
+
+function samplesToCsv(samples: HistorySample[]): string {
+  const header = ["ts", "aggregateStatus", "successCount", "failureCount", "openIncidentCount", "alertCount"];
+  const rows = samples.map((s) =>
+    [s.ts, s.aggregateStatus, s.successCount, s.failureCount, s.openIncidentCount, s.alertCount].map(csvCell).join(","),
+  );
+  return [header.join(","), ...rows].join("\n");
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null) return {};
@@ -80,6 +105,30 @@ export function registerHistoryHandlers(): void {
 
   ipcMain.handle("history:getSloStatus", async () => {
     return await getSloStatus();
+  });
+
+  ipcMain.handle("history:export", async (_event, payload: unknown): Promise<{ ok: boolean; filePath?: string }> => {
+    const req = asRecord(payload);
+    const dataset = req.dataset === "samples" ? "samples" : "events";
+    const format = req.format === "json" ? "json" : "csv";
+    const [samples, events] = await Promise.all([getAllSamples(), getAllEvents()]);
+
+    let contents: string;
+    if (format === "json") {
+      contents = JSON.stringify(dataset === "samples" ? samples : events, null, 2);
+    } else {
+      contents = dataset === "samples" ? samplesToCsv(samples) : eventsToCsv(events);
+    }
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog({
+      title: "Export history",
+      defaultPath: `observability-${dataset}-${stamp}.${format}`,
+      filters: [{ name: format.toUpperCase(), extensions: [format] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false };
+    await fs.writeFile(result.filePath, contents, "utf-8");
+    return { ok: true, filePath: result.filePath };
   });
 
   logger.info("history", "✓ History handlers registered");

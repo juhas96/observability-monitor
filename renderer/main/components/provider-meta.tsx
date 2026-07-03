@@ -41,6 +41,7 @@ const PROVIDER_ICONS: Record<Provider, LucideIcon> = {
   statuspage: RadioTower,
   datadog: Gauge,
   honeycomb: Hexagon,
+  posthog: Bug,
 };
 
 const PROVIDER_LABELS: Record<Provider, string> = {
@@ -56,6 +57,7 @@ const PROVIDER_LABELS: Record<Provider, string> = {
   statuspage: "Statuspage",
   datadog: "Datadog",
   honeycomb: "Honeycomb",
+  posthog: "PostHog",
 };
 
 const CATEGORY_ICONS: Partial<Record<MonitorCategory, LucideIcon>> = {

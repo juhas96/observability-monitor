@@ -16,6 +16,7 @@ import { pagerdutyProvider } from "./pagerduty.js";
 import { statuspageProvider } from "./statuspage.js";
 import { datadogProvider } from "./datadog.js";
 import { honeycombProvider } from "./honeycomb.js";
+import { posthogProvider } from "./posthog.js";
 
 let registered = false;
 
@@ -33,6 +34,7 @@ export function registerProviders(): void {
   register(statuspageProvider);
   register(datadogProvider);
   register(honeycombProvider);
+  register(posthogProvider);
   registered = true;
 }
 

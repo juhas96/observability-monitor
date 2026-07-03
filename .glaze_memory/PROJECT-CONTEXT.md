@@ -4,7 +4,7 @@
 
 - **App Name:** Multi Monitor
 - **Purpose:** Menu bar + dashboard app that monitors CI/CD + ops activity across MANY accounts of MANY providers at once, via a pluggable provider registry.
-- **Providers (12 in domain/types; 12 registered in this worktree):** GitHub (Actions runs), Cloudflare (Pages + Workers deploys), Supabase (latest migration + error-log rollup), Netlify (site deploys), Resend (domain verification + broadcasts), Grafana (configurable alerts + data source health + dashboards + annotations), Heroku (latest release), Sentry (unresolved issues), PagerDuty (incidents), Statuspage (incidents/components), Datadog (monitors), Honeycomb (triggers/SLOs). Each = one encrypted secret + optional non-secret config fields.
+- **Providers (13 in domain/types; 13 registered in this worktree):** GitHub (Actions runs), Cloudflare (Pages + Workers deploys), Supabase (latest migration + error-log rollup), Netlify (site deploys), Resend (domain verification + broadcasts), Grafana (configurable alerts + data source health + dashboards + annotations), Heroku (latest release), Sentry (unresolved issues), PagerDuty (incidents), Statuspage (incidents/components), Datadog (monitors), Honeycomb (triggers/SLOs), PostHog (error-tracking issues/exceptions). Each = one encrypted secret + optional non-secret config fields.
 - **Features:**
   - Connect multiple accounts per provider; credentials stored encrypted (safeStorage).
   - Dashboard grouped by project group, then account, showing recent items with status, relative time, open-in-browser, and row-level log/detail actions.
@@ -13,6 +13,10 @@
   - Insights (`/insights`) shows success/failure trends, activity volume, alert volume, and local SLO/error-budget cards with create/edit/delete.
   - Incident center (`/incidents`) consolidates live signals/incidents with local acknowledge/silence state and a per-item history timeline.
   - Correlation timeline (`/timeline`) overlays deploys, failures, recoveries, alerts, and incidents across group or provider lanes.
+  - Uptime/synthetic checks (`/uptime`): user-defined HTTP checks probed each poll cycle with up/down + latency, uptime %, and latency sparkline (latency history persisted per check).
+  - Custom alert rules (`/alerts`): threshold rules on failure rate / check latency / open incidents scoped to all/group/account/provider/check; fire on transition into breach with notification + channel dispatch + a timeline alert event.
+  - Notification channels (Settings): Slack incoming-webhook or generic webhook forwarding for failure/success/alert/digest events; webhook URL stored encrypted; per-channel test.
+  - Scheduled digest (Settings): daily/weekly health summary notification + channel dispatch; CSV/JSON export of history events/samples from Insights.
   - Dedicated Grafana incident console for alerts, data source health, saved Loki log presets, and saved Tempo trace presets.
   - Project group + provider + status filters (persisted to localStorage), manual refresh.
   - Background polling with configurable interval; native notifications on failure/success (configurable).
@@ -24,31 +28,38 @@
 ### Key files
 - `AGENTS.md` — repo-level architecture/conventions doc for AI coding agents (mirrors this file's non-sensitive parts); keep in sync when architecture/conventions change.
 - `README.md` — developer setup guide covering macOS/Node/npm/Glaze/Xcode prerequisites, importing `Observability Monitor.glaze` into the Glaze macOS app, install/run/validation commands, troubleshooting, and runtime data notes.
-- `main/index.ts` — app entry; creates main window (1000×700, min 720×480), inits tray + starts poller on ready, `showMainWindow()` helper, stops poller on quit.
-- `main/handlers/index.ts` — calls `registerProviders()` first, then registers account/grafana/history/monitor/provider/triage handlers.
+- `main/index.ts` — app entry; creates main window (1000×700, min 720×480), inits tray + starts poller AND digest scheduler on ready, `showMainWindow()` helper, stops poller + digest on quit.
+- `main/handlers/index.ts` — calls `registerProviders()` first, then registers account/channels/checks/grafana/history/monitor/provider/rules/triage handlers.
 - `main/handlers/accounts.ts` — generic, registry-driven `accounts:list/add/update/remove/test` plus `groups:list`; splits creds into secret (token-store) + non-secret (`account.config`) via `definition.fields`; blank non-secret fields clear optional config on edit; `validate()` resolves identity; account add/update can assign an existing project group or create/reuse one by name.
 - `main/handlers/grafana.ts` — Grafana incident-console IPC: overview, run saved Loki log preset, run saved Tempo trace preset, update observability config.
-- `main/handlers/history.ts` — `history:getSeries/getEvents/listSlos/saveSlo/deleteSlo/getSloStatus` for persisted trend, event, and SLO data.
-- `main/handlers/monitor.ts` — `monitor:getSnapshot/refresh/getSettings/updateSettings/getStatus`, `monitor:getItemLogs` (backend-resolved row log fetch by current snapshot `itemUid`), and `monitor:openExternal` (open-in-browser proxy).
+- `main/handlers/history.ts` — `history:getSeries/getEvents/listSlos/saveSlo/deleteSlo/getSloStatus` plus `history:export` (CSV/JSON of events or samples via `dialog.showSaveDialog`).
+- `main/handlers/channels.ts` — `channels:list/save/delete/test`; never returns the stored URL (only `hasUrl`).
+- `main/handlers/checks.ts` — `checks:list/save/delete/getLatencySeries` for uptime checks.
+- `main/handlers/rules.ts` — `rules:list/save/delete/getState` for custom alert rules (state = in-memory firing state).
+- `main/handlers/monitor.ts` — `monitor:getSnapshot/refresh/getSettings/updateSettings/getStatus`, `monitor:getItemLogs`, `monitor:openExternal`; `updateSettings` reschedules both poller and digest.
 - `main/handlers/providers.ts` — `providers:list` → `registry.publicList()` (id/label/scopeHint/fields; no functions).
 - `main/handlers/triage.ts` — local triage IPC for `triage:list/acknowledge/silence/clear`.
 - `main/services/providers/registry.ts` — `ProviderDefinition` interface + `register/get/has/list/publicList/secretField`; provider fields support text/password plus string-backed boolean defaults for renderer switches; adapters can optionally implement `fetchSignals`, `fetchIncidents`, `fetchMetricsSummary`, `getDeepLinks`, and `fetchLogs(account, creds, item)`.
 - `main/services/providers/index.ts` — `registerProviders()` registers all adapters; re-exports registry.
-- `main/services/providers/{github,cloudflare,supabase,netlify,resend,grafana,heroku,sentry,pagerduty,statuspage,datadog,honeycomb}.ts` — one adapter each (`fields`, `validate`, `fetch`; many also richer observability hooks and/or `fetchLogs`). github/cloudflare wrap the existing `github-api.ts`/`cloudflare-api.ts` clients.
+- `main/services/providers/{github,cloudflare,supabase,netlify,resend,grafana,heroku,sentry,pagerduty,statuspage,datadog,honeycomb,posthog}.ts` — one adapter each (`fields`, `validate`, `fetch`; many also richer observability hooks and/or `fetchLogs`). github/cloudflare wrap the existing `github-api.ts`/`cloudflare-api.ts` clients. `posthog.ts` (modeled on sentry): personal API key + region (us/eu) + projectId; error-tracking issues with a HogQL `$exception` aggregation fallback.
+- `main/services/channels-store.ts` — `channels.json` non-secret channel meta; webhook URL stored in token-store under `channel:<id>`. `main/services/dispatch.ts` — `dispatch(event)`/`dispatchTest(id)` POST to enabled Slack/webhook channels by event kind (never throws into the poll cycle).
+- `main/services/checks-store.ts` — `checks.json` HTTP check defs. `main/services/checks-runner.ts` — `runChecks()` probes enabled checks with `AbortController` timeout, returns up/down + latency results.
+- `main/services/rules-store.ts` — `rules.json` alert-rule defs. `main/services/rules-engine.ts` — `evaluateRules(snapshot)` computes metric per rule (failureRate/latency/openIncidents), keeps in-memory firing state, fires on transition into breach (notification + dispatch kind "alert" + `history.appendEvent`); `getRuleStates()`.
+- `main/services/digest-scheduler.ts` — poller-style timer; at configured daily/weekly hour builds a 24h summary from history and delivers a native notification + dispatch (kind "digest"); `start/stop/reschedule`.
 - `main/services/types.ts` — `Provider` union, generic `Account { …, groupId?, identity?, config? }`, `ProjectGroup`, `MonitorItem { kind:string, category, logAvailable?, logFallbackUrl?, logRef? }`, `MonitorLogResponse`/`MonitorLogLine`, observability signal/incident/service types, history sample/event types, SLO/triage types, `NormalizedStatus` (adds `warning`,`info`), settings.
 - `main/services/accounts-store.ts` — accounts.json (no secrets) with `{ accounts, groups }`; `migrate()` shim maps legacy `login`/`accountName`/`cloudflareAccountId`/`repoFilter` → `identity`/`config`; group helpers list/create-or-reuse/validate/prune unused groups.
 - `main/services/token-store.ts` (safeStorage → tokens.bin.json base64, one secret per account), `settings-store.ts`.
-- `main/services/history-store.ts` — DataStore-backed `history.json` with rolling 14-day samples/events retention, event de-dupe, downsampled series queries, SLO CRUD, and SLO compliance/error-budget computation.
+- `main/services/history-store.ts` — DataStore-backed `history.json` with rolling 14-day samples/events/checkSamples retention, event de-dupe, downsampled series queries, per-check latency series + uptime (`getCheckLatencySeries`), `appendEvent`, `getAllSamples/getAllEvents` (export), SLO CRUD, and SLO compliance/error-budget computation. NOTE: uptime checks are NOT written as `HistoryEvent`s (that field is strictly `Provider`-typed and feeds provider icons) — they persist as separate `checkSamples`.
 - `main/services/triage-store.ts` — DataStore-backed `triage.json` for local acknowledge/silence state; notifier checks active silence before showing terminal transition notifications.
-- `main/services/poller.ts` — non-overlapping loop; `registry.get(provider).fetch(account, creds)` where creds = config + secret, plus optional observability hooks for signals/incidents/metrics/deep links; records history after `buildSnapshot()`, then drives notifications/tray/push.
+- `main/services/poller.ts` — non-overlapping loop; `registry.get(provider).fetch(account, creds)` where creds = config + secret, plus optional observability hooks; on FULL cycles (not single-account refresh) runs `runChecks()` and sets aggregator check results; records history (incl. check latency samples) after `buildSnapshot()`, drives notifications/tray/push, then `evaluateRules(snapshot)`.
 - `main/services/grafana-observability.ts` — backend-only Grafana token use for incident console: parses/persists `account.config.grafanaObservability`, discovers datasources, checks health, runs Loki `query_range` and Tempo `api/search` through Grafana datasource proxy.
 - `main/services/aggregator.ts` — in-memory cache for feed rows plus first-class `services`, `signals`, `incidents`, `metrics`, `deepLinks`, and `staleness`; derives service health from project groups/accounts and applies priority failure>warning>running>queued>success>info>cancelled>unknown. `diff-engine.ts`, `notifier.ts`, `push.ts`, `tray-controller.ts` consume the aggregate snapshot.
-- `renderer/main/root-view.tsx` — SplitView + Sidebar nav; `router.tsx` routes (`/`, `/apps`, `/insights`, `/incidents`, `/timeline`, `/grafana`, `/accounts`).
-- `renderer/main/dashboard-view.tsx` (project group + provider filters from `groups:list`/`providers:list`), `apps-view.tsx` (cross-provider ops cockpit), `insights-view.tsx` (history trends + SLOs), `incidents-view.tsx` (triage inbox + item timeline), `timeline-view.tsx` (correlation lanes), `grafana-view.tsx` (incident console), `accounts-view.tsx`.
+- `renderer/main/root-view.tsx` — SplitView + Sidebar nav; `router.tsx` routes (`/`, `/apps`, `/insights`, `/incidents`, `/timeline`, `/uptime`, `/alerts`, `/grafana`, `/accounts`).
+- `renderer/main/dashboard-view.tsx`, `apps-view.tsx`, `insights-view.tsx` (history trends + SLOs + CSV export button), `incidents-view.tsx`, `timeline-view.tsx`, `uptime-view.tsx` (checks list with status/uptime/latency chart + add/edit dialog), `alerts-view.tsx` (rule list with firing badge + add/edit dialog), `grafana-view.tsx`, `accounts-view.tsx`.
 - `renderer/main/components/` — `add-account-dialog.tsx` (data-driven: provider Select + dynamic fields from `providers:list`, boolean fields as switches, project group assignment/create), `provider-meta.tsx` (provider→icon/label + category→icon; ONLY manual per-provider UI), `account-section.tsx`, `run-row.tsx` (icon via `categoryIcon`, row log/open actions), `log-viewer-dialog.tsx` (on-demand logs with search/copy/open fallback), `charts.tsx` (Recharts-backed responsive charts with axes/tooltips/legends), `status-badge.tsx` (warning/info added), `relative-time.ts`.
-- `renderer/main/hooks/` — `use-monitor-data.ts`, `use-accounts.ts` (accounts + groups queries/mutations), `use-providers.ts`, `use-history.ts`, `use-slos.ts`, `use-triage.ts`.
+- `renderer/main/hooks/` — `use-monitor-data.ts`, `use-accounts.ts`, `use-providers.ts`, `use-history.ts`, `use-slos.ts`, `use-triage.ts`, `use-checks.ts` (list/mutations/latency), `use-rules.ts` (list/states/mutations).
 - `renderer/main/ipc.ts` / `types.ts` — typed IPC wrappers (+`listProviders`, `listGroups`, enriched `AggregateSnapshot`, `getItemLogs`, Grafana incident-console calls, history/SLO/triage calls) + renderer mirror.
-- `renderer/settings/settings-view.tsx` — Theme + Monitoring fieldset; settings window 560×480.
+- `renderer/settings/settings-view.tsx` — Theme + Monitoring + Digest (enabled/cadence/hour) fieldsets + `notification-channels.tsx` (add/list/toggle-events/test/delete channels); settings window 560×480. Settings renderer is a SEPARATE bundle — it defines its own inline `MonitorSettings`/`DigestSettings` and calls `window.glazeAPI.glaze.ipc.invoke` directly (not the main `monitorApi`).
 
 ### Components
 Uses @glaze/core: `SplitView` (storageKey "cicd-monitor"), `Sidebar*` (route nav), `ScrollArea`, `List`, `Dialog` (add/edit, controlled), `AlertDialog` (remove), `Select`/`Input`/`Switch`/`Field`/`FieldSet`, `Status`, `Badge`, `Callout`, `EmptyState`, `Text`, `Button`. lucide-react icons. Recharts powers Insights trend/SLO charts and the Timeline correlation chart.
@@ -56,21 +67,24 @@ Uses @glaze/core: `SplitView` (storageKey "cicd-monitor"), `Sidebar*` (route nav
 ### Data & storage
 - `userData/accounts.json` — `{ accounts: Account[], groups: ProjectGroup[] }` with account `groupId`, `identity` + `config` (non-secret fields: `accountId`, `repos`, `projectRef`, `baseUrl`, Grafana `show*` toggles + filter strings, `grafanaObservability` JSON string with datasource defaults + saved presets), NO secrets.
 - `userData/tokens.bin.json` — `{ version:1, tokens: {accountId: base64(safeStorage-encrypted secret)} }`.
-- `userData/settings.json` — MonitorSettings (pollIntervalSeconds default 60/min 30 + notify flags).
-- `userData/history.json` — `{ version:1, samples, events, slos }`, rolling 14-day local observability history with no secrets.
+- `userData/settings.json` — MonitorSettings (pollIntervalSeconds default 60/min 30 + notify flags + `digest {enabled,cadence,hour}`).
+- `userData/history.json` — `{ version:1, samples, events, slos, checkSamples }`, rolling 14-day local observability history with no secrets (checkSamples = per-check `{checkId,ts,latencyMs,ok}`).
 - `userData/triage.json` — local acknowledge/silence metadata keyed by normalized signal/incident uid.
-- localStorage: `dashboard.groupFilter`, `dashboard.providerFilter`, `dashboard.statusFilter`, `insights.groupFilter`, `insights.providerFilter`. In-memory: enriched aggregator snapshot; diff-engine last-status map.
+- `userData/channels.json` — `{ channels: Channel[] }` non-secret notification-channel meta (webhook URL kept in tokens.bin.json under `channel:<id>`).
+- `userData/checks.json` — `{ checks: HttpCheck[] }` uptime check defs. `userData/rules.json` — `{ rules: AlertRule[] }` alert-rule defs.
+- localStorage: `dashboard.groupFilter`, `dashboard.providerFilter`, `dashboard.statusFilter`, `insights.groupFilter`, `insights.providerFilter`. In-memory: enriched aggregator snapshot (+ last check results); diff-engine last-status map; rules-engine firing-state map.
 
 ### IPC channels
 - `providers:list` → ProviderInfo[]; `groups:list` → ProjectGroup[]; `accounts:list` → Account[]; `accounts:add/update/test` (payload `{ provider, label?, creds, groupId?, newGroupName? }`, creds = flat map; secrets inbound only); `accounts:remove`.
 - `monitor:getSnapshot/refresh/getSettings/updateSettings/getStatus`; snapshot now includes `items`, `services`, `signals`, `incidents`, `metrics`, `deepLinks`, and per-account `staleness`; `monitor:getItemLogs` (accepts only `{ itemUid }`, resolves item/account/token server-side); `monitor:openExternal`.
 - `grafana:getOverview`; `grafana:runLogPreset`; `grafana:runTracePreset`; `grafana:updateObservabilityConfig` (all validate Grafana account ownership server-side and keep tokens backend-only).
-- `history:getSeries`; `history:getEvents`; `history:listSlos/saveSlo/deleteSlo/getSloStatus`.
+- `history:getSeries`; `history:getEvents`; `history:listSlos/saveSlo/deleteSlo/getSloStatus`; `history:export` (`{dataset:"events"|"samples", format:"csv"|"json"}` → save dialog).
 - `triage:list`; `triage:acknowledge`; `triage:silence`; `triage:clear`.
+- `channels:list/save/delete/test` (URL write-only, never returned); `checks:list/save/delete/getLatencySeries`; `rules:list/save/delete/getState`.
 - Push (via `ipcMain.broadcast` → renderer `onNotification`): `monitor:snapshot`, `monitor:accountError`, `monitor:pollingState`, `settings:monitor-changed`.
 
 ### Integrations (all token/key based, Node 24 global fetch — no new npm deps)
-- GitHub REST v2022-11-28; Cloudflare API v4 (Pages + Workers). Supabase Management API (`api.supabase.com`: `/v1/projects`, `/database/migrations`, `/analytics/endpoints/logs.all?sql=` — logs best-effort/feature-detected). Netlify (`api.netlify.com/api/v1` sites+deploys). Resend (`api.resend.com` /domains, /broadcasts, `/logs`, `/logs/:id` feature-detected). Grafana (`{baseUrl}/api/health`, `/api/prometheus/grafana/api/v1/rules`, `/api/datasources`, `/api/datasources/uid/:uid/health`, `/api/search`, `/api/annotations`, `/api/datasources/proxy/uid/:uid/loki/api/v1/query_range`, `/api/datasources/proxy/uid/:uid/api/search`). Heroku (`api.heroku.com` /apps, /releases with `Range: version ..; order=desc,max=3`, `Accept: …version=3`, release `output_stream_url` detail lookup). Current worktree also includes Sentry (`sentry.io/api/0` issues), PagerDuty (`api.pagerduty.com` incidents), Statuspage (`api.statuspage.io/v1` incidents/components), Datadog (`api.<site>` validate/monitors), and Honeycomb (`api.honeycomb.io` auth/triggers/SLOs).
+- GitHub REST v2022-11-28; Cloudflare API v4 (Pages + Workers). Supabase Management API (`api.supabase.com`: `/v1/projects`, `/database/migrations`, `/analytics/endpoints/logs.all?sql=` — logs best-effort/feature-detected). Netlify (`api.netlify.com/api/v1` sites+deploys). Resend (`api.resend.com` /domains, /broadcasts, `/logs`, `/logs/:id` feature-detected). Grafana (`{baseUrl}/api/health`, `/api/prometheus/grafana/api/v1/rules`, `/api/datasources`, `/api/datasources/uid/:uid/health`, `/api/search`, `/api/annotations`, `/api/datasources/proxy/uid/:uid/loki/api/v1/query_range`, `/api/datasources/proxy/uid/:uid/api/search`). Heroku (`api.heroku.com` /apps, /releases with `Range: version ..; order=desc,max=3`, `Accept: …version=3`, release `output_stream_url` detail lookup). Current worktree also includes Sentry (`sentry.io/api/0` issues), PagerDuty (`api.pagerduty.com` incidents), Statuspage (`api.statuspage.io/v1` incidents/components), Datadog (`api.<site>` validate/monitors), Honeycomb (`api.honeycomb.io` auth/triggers/SLOs), and PostHog (`{us|eu}.posthog.com`: `/api/users/@me/`, `/api/projects/:id/error_tracking/issues/`, HogQL `/api/projects/:id/query/` fallback). Outbound: Slack incoming-webhook / generic webhook POST via `dispatch.ts`; uptime checks fetch arbitrary user HTTP endpoints.
 - Row-level log/detail support: GitHub Actions job logs, Cloudflare Pages deployment history logs, Supabase recent Postgres error logs, Heroku release phase output when available, Grafana first saved Loki log preset, and Resend API logs best-effort matching. Netlify and Cloudflare Workers expose provider-page log fallbacks in v1.
 - Endpoints for Supabase logs, Resend broadcasts/logs, Grafana observability surfaces, Cloudflare Pages logs, and Heroku release output were built defensively but NOT curl-validated against live credentials — verify with real tokens at runtime.
 
@@ -80,8 +94,20 @@ Uses @glaze/core: `SplitView` (storageKey "cicd-monitor"), `Sidebar*` (route nav
 - `shell:openExternal` IPC channel is registered by the native runtime — do NOT re-register; app uses `monitor:openExternal`. Backend calls `shell.openExternal()` directly (tray/notifier).
 - Tray icon SF Symbol `bolt.horizontal.circle.fill`, tinted by aggregate status. Poller seeds diff-engine silently on first cycle.
 - The Live-app evaluate MCP tool errored (GlazeIPCError) during validation; the app's own IPC works fine — validate via DOM snapshot / real runtime instead.
+- `HistoryEvent.provider` is strictly `Provider`-typed and drives `providerIcon/providerLabel`; do NOT widen it for non-provider events (e.g. uptime checks). Rule alerts only write a `HistoryEvent` when a provider is determinable. `HistoryEventType` includes `"check"` for forward-compat but no check events are emitted — adding a member to that union breaks exhaustive `switch`es (e.g. `incidents-view.tsx` `eventIcon`).
+- Notification channel secrets reuse `token-store` under the `channel:<id>` key (arbitrary key namespace); channels are non-secret meta in `channels.json`. `dispatch()` must never throw into the poll cycle.
+- New views drive the TanStack in-memory router via sidebar `<button>` clicks; programmatic runtime navigation in the inspector requires dispatching a full pointer event sequence on the actual nav `<button>` (a plain `.click()` on text nodes does not navigate).
 
 ## Recent History
+
+### 2026-07-03 — Add PostHog provider, uptime checks, alert rules, digests/export, and Slack/webhook channels
+- **Goal:** Verify the shipped observability features, add PostHog as a provider, and extend toward a fuller platform (user selected uptime checks, custom alert rules, scheduled digests/export, and Slack/webhook notifications).
+- **What was done:** Verified prior 4 features (type-check/lint pass, all wired). Added PostHog adapter (error-tracking issues + HogQL fallback). Added notification channels (`channels-store`/`dispatch`) wired into the notifier. Added uptime/synthetic checks (`checks-store`/`checks-runner`, `/uptime` view, latency series persisted in history, `snapshot.checks`). Added custom alert rules (`rules-store`/`rules-engine`, `/alerts` view) that fire on transition into breach via notification + dispatch + timeline event. Added scheduled digest (`digest-scheduler`, Settings) + `history:export` CSV/JSON with save dialog. Delivered phase-by-phase; type-check + lint pass after each; build succeeded and `/uptime` + `/alerts` render at runtime.
+- **Key decisions:** Slack/webhook dispatch is shared infra reused by rules + digests; channels subscribe by event kind (failure/success/alert/digest) rather than per-rule channel ids. Webhook URL stored encrypted via token-store `channel:<id>`. Uptime checks persist as separate `checkSamples` (NOT `HistoryEvent`s) to keep `HistoryEvent.provider` strictly a `Provider`. Alert metrics computed from the latest snapshot (failureRate/latency/openIncidents); firing state kept in memory like the diff-engine. Checks run on full poll cycles only.
+- **UI elements:** New `/uptime` and `/alerts` sidebar routes with add/edit dialogs; Insights export button; Settings gains Digest fieldset + notification-channels manager.
+- **Backend elements:** `posthog.ts` adapter; `channels-store.ts`, `dispatch.ts`, `checks-store.ts`, `checks-runner.ts`, `rules-store.ts`, `rules-engine.ts`, `digest-scheduler.ts`; handlers `channels.ts`/`checks.ts`/`rules.ts`; `history-store` gains checkSamples + latency series + appendEvent + export getters; poller runs checks + evaluates rules; digest scheduler in app lifecycle + reschedule on settings change.
+- **Corrections/Lessons Learned:** Backend lint rejects the DOM `RequestInit` type (use a local init interface). Adding `"check"` to `HistoryEventType` broke an exhaustive `switch` in `incidents-view.tsx` (needed a case). `Button` variants are transparent/accent/destructive/filled/muted/glass/glassAccent + sizes small/medium/large + `iconOnly` (no ghost/outline/sm). `Callout` uses `color` not `variant`. PostHog error-tracking + HogQL endpoints and Slack/webhook delivery are NOT live-verified — confirm with real credentials/URLs.
+- **User Frustrations & Important Remarks:** User asked to verify prior work, add PostHog observability, and pick the next features; approved building all four selected next features plus PostHog.
 
 ### 2026-07-03 — Add persisted history, insights, triage, SLOs, and timeline
 - **Goal:** Implement the plan to turn the app from a live-only monitor into an observability platform foundation with trends, incident triage, SLO/error-budget tracking, and correlation.
@@ -128,21 +154,3 @@ Uses @glaze/core: `SplitView` (storageKey "cicd-monitor"), `Sidebar*` (route nav
 - **Backend elements:** Grafana adapter calls `/api/datasources`, `/api/datasources/uid/:uid/health`, `/api/search`, and `/api/annotations` in addition to health + alert rules; data source health is capped at 25, dashboards at 10, annotations at 20 over the last 24 hours.
 - **Corrections/Lessons Learned:** Type-check and lint both pass via the Glaze CLI; live Grafana behavior still needs verification with real service account permissions.
 - **User Frustrations & Important Remarks:** User emphasized that Grafana should become broader observability and that what the user sees must be configurable.
-
-### 2026-07-03 — Revert dev-run resolver experiment and document Glaze import
-- **Goal:** User asked to revert the runtime/tooling changes made while trying to run the app, leaving only the README and project group feature changes.
-- **What was done:** Restored `glaze.ts` and `tsconfig.json` to the normal SDK path shape, removed the temporary `.glaze-sdk` ignore/symlink behavior, removed the `sonner` dependency added for Vite dev scanning, and adjusted `README.md` to tell developers to copy/import `Observability Monitor.glaze` from the repo root into the Glaze macOS app before running.
-- **Key decisions:** Kept project group changes and the README; did not keep the per-user SDK resolver hook because app import via `Observability Monitor.glaze` is the intended setup flow.
-- **UI elements:** none.
-- **Backend elements:** tooling/docs cleanup only.
-- **Corrections/Lessons Learned:** The developer setup should be documented around importing the `.glaze` app file rather than hardcoding per-user SDK resolver behavior.
-- **User Frustrations & Important Remarks:** User said they will copy `Observability Monitor.glaze` here before pushing and wants the README to point developers to that import flow.
-
-### 2026-07-03 — Add developer setup README
-- **Goal:** Document what a developer needs installed before running the app locally.
-- **What was done:** Added `README.md` with prerequisites (macOS, Glaze macOS app, Node 24+, npm 11, Xcode Command Line Tools), instructions to copy/import `Observability Monitor.glaze` into the Glaze app, install/run/validation commands, troubleshooting, runtime data locations, and key repo notes.
-- **Key decisions:** Documented the Glaze app import workflow; warned not to install or modify `@glaze/core` as a normal app dependency.
-- **UI elements:** none (docs-only change).
-- **Backend elements:** none (docs-only change).
-- **Corrections/Lessons Learned:** The README now points developers at the intended Glaze project import step before running native dev commands.
-- **User Frustrations & Important Remarks:** User asked for developer prerequisites before running the app.
