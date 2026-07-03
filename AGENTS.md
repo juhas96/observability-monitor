@@ -39,7 +39,7 @@ glaze.ts         app/window configuration
 - **Styling**: Tailwind v4 utilities plus the design-system components already in use (semantic colors, `Text` variants, `rounded-*` roles). Don't hand-roll CSS files or reach for raw Tailwind palette colors.
 - **Surgical edits**: every changed line should trace back to the requested change. Don't refactor unrelated working code or add comments to code you didn't touch.
 - **Minimize round trips**: read every file you need for a change up front and batch independent edits; only sequence calls when one genuinely depends on a prior result's output.
-- **Project memory discipline**: after every completed change, no matter how small, update `.glaze_memory/PROJECT-CONTEXT.md` — overwrite the relevant `Current State` entries in place (it's a snapshot, not a log) and prepend a new `Recent History` entry (newest first). This is what lets a fresh session re-ground without prior chat context.
+- **Project memory discipline (mandatory, every change)**: after EVERY completed change, no matter how small (a color tweak, a one-line fix, a config change), update `.glaze_memory/PROJECT-CONTEXT.md` before considering the task done — overwrite the relevant `Current State` entries in place (it's a snapshot, not a log) and prepend a new `Recent History` entry (newest first). `PROJECT-HISTORY.md` is the append-only full log; it is auto-mirrored from `Recent History` by the system, so never write to it directly — just keep `PROJECT-CONTEXT.md` current and the history follows. This is what lets a fresh session re-ground without prior chat context.
 
 ## Commands
 
