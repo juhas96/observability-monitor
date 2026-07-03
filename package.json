@@ -3,8 +3,8 @@
   "name": "observability-monitor",
   "version": "1.0.0",
   "productName": "Observability Monitor",
-  "description": "Monitor GitHub and Cloudflare from one",
-  "iconDescription": "A unified monitoring dashboard for tracking multiple GitHub Actions workflows and Cloudflare accounts simultaneously. Users can connect and switch between different GitHub and Cloudflare accounts to view real-time status, logs, and metrics all in one place. Think of a control panel with multiple interconnected nodes, a network hub, or stacked dashboard cards representing different accounts.",
+  "description": "Cross-provider CI/CD, incident, status, and observability monitor",
+  "iconDescription": "A unified macOS monitoring dashboard for tracking CI/CD runs, deploys, incidents, status pages, alerts, logs, traces, and service health across providers such as GitHub, Cloudflare, Supabase, Netlify, Resend, Grafana, Heroku, Sentry, PagerDuty, Statuspage, Datadog, and Honeycomb. Think of an operations control panel with connected provider nodes and service health signals.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,6 +26,7 @@
     "radix-ui": "^1.4.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "recharts": "^3.9.1",
     "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {

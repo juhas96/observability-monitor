@@ -15,11 +15,13 @@ export function AccountSection({
   status,
   items,
   onOpen,
+  onViewLogs,
 }: {
   account: Account;
   status: PerAccountStatus | undefined;
   items: MonitorItem[];
   onOpen: (item: MonitorItem) => void;
+  onViewLogs: (item: MonitorItem) => void;
 }) {
   const Icon = providerIcon(account.provider);
 
@@ -56,7 +58,7 @@ export function AccountSection({
       ) : (
         <div className="flex flex-col">
           {items.map((item) => (
-            <RunRow key={item.uid} item={item} onOpen={onOpen} />
+            <RunRow key={item.uid} item={item} onOpen={onOpen} onViewLogs={onViewLogs} />
           ))}
         </div>
       )}

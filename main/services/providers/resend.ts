@@ -3,7 +3,7 @@
  * verification status and recent broadcasts. Credential: API key (re_…).
  */
 
-import type { MonitorItem, NormalizedStatus } from "../types.js";
+import type { MonitorItem, MonitorLogLine, MonitorLogResponse, NormalizedStatus } from "../types.js";
 import type { ProviderDefinition } from "./registry.js";
 
 const API_BASE = "https://api.resend.com";
@@ -41,6 +41,20 @@ interface RsBroadcast {
   sent_at?: string;
 }
 
+interface RsLogSummary {
+  id: string;
+  created_at?: string;
+  endpoint?: string;
+  method?: string;
+  response_status?: number;
+  user_agent?: string;
+}
+
+interface RsLogDetail extends RsLogSummary {
+  request_body?: unknown;
+  response_body?: unknown;
+}
+
 function mapDomainStatus(status: string): NormalizedStatus {
   switch (status) {
     case "verified":
@@ -69,6 +83,54 @@ function mapBroadcastStatus(status: string): NormalizedStatus {
     default:
       return "unknown";
   }
+}
+
+function logDetailToLines(log: RsLogDetail): MonitorLogLine[] {
+  const lines: MonitorLogLine[] = [{
+    timestamp: log.created_at,
+    section: "Request",
+    level: String(log.response_status ?? ""),
+    message: `${log.method ?? "REQUEST"} ${log.endpoint ?? ""} -> ${log.response_status ?? "unknown"}`.trim(),
+  }];
+  if (log.user_agent) lines.push({ timestamp: log.created_at, section: "Request", message: `User agent: ${log.user_agent}` });
+  if (log.request_body !== undefined) {
+    lines.push({ timestamp: log.created_at, section: "Request body", message: JSON.stringify(log.request_body, null, 2) });
+  }
+  if (log.response_body !== undefined) {
+    lines.push({ timestamp: log.created_at, section: "Response body", message: JSON.stringify(log.response_body, null, 2) });
+  }
+  return lines;
+}
+
+async function fetchResendLogs(token: string, item: MonitorItem): Promise<MonitorLogResponse> {
+  const ref = item.logRef ?? {};
+  const nativeId = typeof ref.id === "string" ? ref.id : "";
+  const fallback = item.logFallbackUrl ?? item.url;
+  const logs = await rsFetch<RsListEnvelope<RsLogSummary>>(token, "/logs").catch(() => ({ ok: false as const, status: 0 }));
+  if (!logs.ok) throw new Error(`Resend API logs are unavailable (status ${logs.status}).`);
+  const match = (logs.data.data ?? []).find((log) => nativeId && (log.endpoint ?? "").includes(nativeId));
+  if (!match) {
+    return {
+      itemUid: item.uid,
+      title: item.title,
+      subtitle: "Resend API request logs",
+      provider: "resend",
+      fetchedAt: new Date().toISOString(),
+      fallbackUrl: fallback,
+      lines: [{ section: "API logs", message: "No matching API request log was found for this item." }],
+    };
+  }
+  const detail = await rsFetch<RsLogDetail>(token, `/logs/${match.id}`);
+  if (!detail.ok) throw new Error(`Resend log ${match.id} is unavailable (status ${detail.status}).`);
+  return {
+    itemUid: item.uid,
+    title: item.title,
+    subtitle: match.endpoint,
+    provider: "resend",
+    fetchedAt: new Date().toISOString(),
+    fallbackUrl: fallback,
+    lines: logDetailToLines(detail.data),
+  };
 }
 
 export const resendProvider: ProviderDefinition = {
@@ -103,6 +165,10 @@ export const resendProvider: ProviderDefinition = {
           createdAt: now,
           updatedAt: now,
           url: "https://resend.com/domains",
+          logAvailable: true,
+          logLabel: "View logs",
+          logFallbackUrl: "https://resend.com/logs",
+          logRef: { type: "domain", id: domain.id },
         });
       }
     }
@@ -126,10 +192,17 @@ export const resendProvider: ProviderDefinition = {
           createdAt: b.created_at || when,
           updatedAt: when,
           url: "https://resend.com/broadcasts",
+          logAvailable: true,
+          logLabel: "View logs",
+          logFallbackUrl: "https://resend.com/logs",
+          logRef: { type: "broadcast", id: b.id },
         });
       }
     }
 
     return items;
+  },
+  async fetchLogs(_account, creds, item) {
+    return await fetchResendLogs(creds.token, item);
   },
 };

@@ -17,6 +17,7 @@ import {
 } from "@glaze/core/components";
 
 import { AccountSection } from "./components/account-section";
+import { LogViewerDialog } from "./components/log-viewer-dialog";
 import { useMonitorData } from "./hooks/use-monitor-data";
 import { useAccounts, useGroups } from "./hooks/use-accounts";
 import { useProviders } from "./hooks/use-providers";
@@ -59,6 +60,7 @@ export function DashboardView() {
   );
   const [groupFilter, setGroupFilter] = useState(() => localStorage.getItem(GROUP_FILTER_KEY) ?? ALL_GROUPS);
   const [refreshing, setRefreshing] = useState(false);
+  const [logItem, setLogItem] = useState<MonitorItem | null>(null);
 
   const setProvider = (v: ProviderFilter) => {
     setProviderFilter(v);
@@ -75,6 +77,15 @@ export function DashboardView() {
 
   const handleOpen = (item: MonitorItem) => {
     void monitorApi.openExternal(item.url).catch((err) => toast.error(String(err)));
+  };
+
+  const handleViewLogs = (item: MonitorItem) => {
+    if (item.logAvailable) {
+      setLogItem(item);
+      return;
+    }
+    const fallback = item.logFallbackUrl ?? item.url;
+    void monitorApi.openExternal(fallback).catch((err) => toast.error(String(err)));
   };
 
   const handleRefresh = async () => {
@@ -180,7 +191,7 @@ export function DashboardView() {
         {accounts.length === 0 ? (
           <EmptyState
             title="No accounts connected"
-            description="Connect GitHub, Cloudflare, Supabase, Netlify, Resend, Grafana, or Heroku to start monitoring."
+            description="Connect provider accounts to start monitoring cross-app health."
             actions={<Button variant="accent" onClick={() => navigate({ to: "/accounts" })}>Add account</Button>}
           />
         ) : visibleGroups.length === 0 ? (
@@ -200,6 +211,7 @@ export function DashboardView() {
                     status={snapshot?.perAccount[account.id]}
                     items={itemsByAccount.get(account.id) ?? []}
                     onOpen={handleOpen}
+                    onViewLogs={handleViewLogs}
                   />
                 ))}
               </div>
@@ -211,6 +223,7 @@ export function DashboardView() {
           <Callout color="secondary">Fetching the latest runs and deployments…</Callout>
         ) : null}
       </div>
+      <LogViewerDialog item={logItem} open={logItem !== null} onOpenChange={(open) => !open && setLogItem(null)} />
     </ScrollArea>
   );
 }

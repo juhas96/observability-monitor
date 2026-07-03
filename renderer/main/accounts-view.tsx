@@ -75,7 +75,7 @@ export function AccountsView() {
         {accounts.length === 0 ? (
           <EmptyState
             title="No accounts yet"
-            description="Connect GitHub, Cloudflare, Supabase, Netlify, Resend, Grafana, or Heroku accounts to monitor their activity."
+            description="Connect CI/CD, incident, status, and observability providers to monitor their activity."
             actions={<Button variant="accent" onClick={openAdd}>Add account</Button>}
           />
         ) : (

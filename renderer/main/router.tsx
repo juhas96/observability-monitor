@@ -6,7 +6,12 @@ import {
 } from "@tanstack/react-router";
 import { DashboardView } from "./dashboard-view";
 import { AccountsView } from "./accounts-view";
+import { AppsView } from "./apps-view";
+import { GrafanaView } from "./grafana-view";
+import { IncidentsView } from "./incidents-view";
+import { InsightsView } from "./insights-view";
 import { RootView } from "./root-view";
+import { TimelineView } from "./timeline-view";
 import { QueryClient } from "@tanstack/react-query";
 import { ErrorBoundaryView } from "@glaze/core/components";
 
@@ -43,7 +48,60 @@ const accountsRoute = createRoute({
   },
 });
 
-const routeTree = rootRoute.addChildren([dashboardRoute, accountsRoute]);
+const appsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/apps",
+  component: AppsView,
+  staticData: {
+    title: "Apps",
+  },
+});
+
+const grafanaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/grafana",
+  component: GrafanaView,
+  staticData: {
+    title: "Grafana",
+  },
+});
+
+const insightsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/insights",
+  component: InsightsView,
+  staticData: {
+    title: "Insights",
+  },
+});
+
+const incidentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/incidents",
+  component: IncidentsView,
+  staticData: {
+    title: "Incidents",
+  },
+});
+
+const timelineRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/timeline",
+  component: TimelineView,
+  staticData: {
+    title: "Timeline",
+  },
+});
+
+const routeTree = rootRoute.addChildren([
+  dashboardRoute,
+  appsRoute,
+  insightsRoute,
+  incidentsRoute,
+  timelineRoute,
+  grafanaRoute,
+  accountsRoute,
+]);
 
 const queryClient = new QueryClient();
 

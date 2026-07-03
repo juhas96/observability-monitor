@@ -9,11 +9,12 @@ import { logger } from "@glaze/core/backend";
 import * as aggregator from "./aggregator.js";
 import { detectTransitions, forgetAccount } from "./diff-engine.js";
 import * as registry from "./providers/index.js";
+import * as history from "./history-store.js";
 import { notifyTransitions } from "./notifier.js";
 import { pushAccountError, pushPollingState, pushSnapshot } from "./push.js";
 import { getSettings } from "./settings-store.js";
 import { getToken } from "./token-store.js";
-import { listAccounts, updateAccount } from "./accounts-store.js";
+import { listAccounts, listGroups, updateAccount } from "./accounts-store.js";
 import { updateTray } from "./tray-controller.js";
 import type { Account, AggregateSnapshot } from "./types.js";
 
@@ -32,8 +33,15 @@ async function fetchAccount(account: Account): Promise<void> {
     }
     const secret = registry.secretField(account.provider);
     const creds: Record<string, string> = { ...(account.config ?? {}), [secret.key]: token };
-    const items = await registry.get(account.provider).fetch(account, creds);
-    aggregator.setAccountItems(account.id, items, now);
+    const definition = registry.get(account.provider);
+    const items = await definition.fetch(account, creds);
+    const [signals, incidents, metrics, deepLinks] = await Promise.all([
+      definition.fetchSignals?.(account, creds, items) ?? Promise.resolve(undefined),
+      definition.fetchIncidents?.(account, creds, items) ?? Promise.resolve(undefined),
+      definition.fetchMetricsSummary?.(account, creds, items) ?? Promise.resolve(undefined),
+      definition.getDeepLinks?.(account, creds, items) ?? Promise.resolve(undefined),
+    ]);
+    aggregator.setAccountData(account.id, items, now, { signals, incidents, metrics, deepLinks });
     await updateAccount(account.id, { lastSyncAt: now, lastError: undefined });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -58,7 +66,8 @@ export async function runCycle(onlyAccountId?: string): Promise<AggregateSnapsho
   }
   cycleInFlight = true;
   try {
-    const all = await listAccounts();
+    const [all, groups] = await Promise.all([listAccounts(), listGroups()]);
+    aggregator.setKnownAccounts(all, groups);
     aggregator.pruneToAccounts(new Set(all.map((a) => a.id)));
 
     let targets = all.filter((a) => a.enabled);
@@ -70,7 +79,8 @@ export async function runCycle(onlyAccountId?: string): Promise<AggregateSnapsho
 
     const settings = await getSettings();
     const transitions = detectTransitions(snapshot.items);
-    if (transitions.length > 0) notifyTransitions(transitions, settings);
+    await history.record(snapshot, transitions);
+    if (transitions.length > 0) await notifyTransitions(transitions, settings);
 
     updateTray(snapshot);
     pushSnapshot(snapshot);

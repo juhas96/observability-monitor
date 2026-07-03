@@ -1,5 +1,32 @@
 # Project History
 
+### 2026-07-03 — Add row-level provider log viewer
+- **Goal:** User wanted to directly see logs/details from CI/CD, releases, and provider activity inside the app where possible, with external fallbacks where provider APIs are limited.
+- **What was done:** Added `MonitorLogResponse`/`MonitorLogLine` and per-item log metadata (`logAvailable`, `logLabel`, `logFallbackUrl`, `logRef`); added optional provider `fetchLogs`; added `monitor:getItemLogs` that accepts only a current snapshot `itemUid`, resolves the account and encrypted token in the backend, and rejects stale/disabled/unsupported items. Added a dashboard log action and `LogViewerDialog` with on-demand fetch, search, copy, and provider fallback open.
+- **Key decisions:** Kept logs on-demand and non-persistent; renderer never passes arbitrary provider object IDs or tokens; `logRef` contains only provider-safe identifiers; Grafana row logs reuse the first saved Loki preset from the existing incident console; Netlify and Cloudflare Workers are fallback-only in v1.
+- **UI elements:** New log icon beside each eligible row's browser-open button; log dialog with search input, copy button, open-provider button, loading/error/empty states, and timestamped monospaced output.
+- **Backend elements:** GitHub job-log fetch via Actions jobs, Cloudflare Pages deployment history logs, Supabase recent Postgres error logs, Heroku release output stream lookup, Resend API log lookup, and Grafana Loki preset execution through the existing Grafana observability service.
+- **Corrections/Lessons Learned:** `npm run type-check`, `npm run lint`, and `npm run build` pass. Type-check also required completing provider metadata for the expanded provider union and loosening an existing Sentry severity helper to accept the partial level object it actually uses.
+- **User Frustrations & Important Remarks:** User asked whether direct logs for CI/CD, releases, and each provider are possible; implemented a hybrid in-app/fallback approach.
+
+### 2026-07-03 — Add Grafana incident console for saved logs/traces presets
+- **Goal:** User wanted a stronger Grafana observability experience with a dedicated dashboard for logs, traces, and incident triage rather than only normalized summary rows.
+- **What was done:** Added a `/grafana` route/sidebar item with Grafana account selector, range selector, overview cards, active alerts, data source health, default Loki/Tempo datasource selectors, saved LogQL preset editor/runner, and saved TraceQL preset editor/runner. Added backend-only Grafana observability service and IPC handlers for overview, running presets, and updating config.
+- **Key decisions:** Stored incident-console config as a non-secret JSON string at `account.config.grafanaObservability`; kept all tokens in the backend; used only fixed Grafana/Loki/Tempo endpoints rather than exposing a generic proxy; did not auto-run broad logs/traces queries when no presets exist.
+- **UI elements:** New Grafana sidebar route; dense operational sections for defaults, overview, logs, and traces; inline add/edit/delete controls for presets.
+- **Backend elements:** `grafana:getOverview`, `grafana:runLogPreset`, `grafana:runTracePreset`, `grafana:updateObservabilityConfig`; datasource discovery via `/api/datasources`; Loki queries via datasource proxy `query_range`; Tempo searches via datasource proxy `api/search`.
+- **Corrections/Lessons Learned:** `npm run type-check` and `npm run lint` pass. Live Grafana Loki/Tempo behavior still needs verification with real datasource UIDs and service account permissions.
+- **User Frustrations & Important Remarks:** User asked whether Grafana observability could be improved with a dedicated dashboard for logs/traces.
+
+### 2026-07-03 — Expand Grafana into configurable observability surfaces
+- **Goal:** User wanted the existing Grafana provider to show more than alerts, with the visible observability data configurable by the user.
+- **What was done:** Added string-backed boolean provider fields and renderer switch support; updated account edit handling so blank non-secret fields clear optional config while blank secrets keep the stored token; expanded Grafana to configurable `showAlerts`, `showDataSourceHealth`, `showDashboards`, and `showAnnotations` surfaces plus optional data source UID/dashboard/annotation filters. Added Grafana rows for data source health, dashboard links, and recent annotations, with warning rows for enabled surfaces that fail independently.
+- **Key decisions:** Kept configuration per Grafana account inside the existing add/edit account dialog; existing Grafana accounts default to alerts + data source health enabled and dashboards/annotations disabled; no custom PromQL/Loki/Tempo query editor in this version.
+- **UI elements:** Boolean provider fields render as switches; new category icons for data sources, dashboards, and annotations.
+- **Backend elements:** Grafana adapter calls `/api/datasources`, `/api/datasources/uid/:uid/health`, `/api/search`, and `/api/annotations` in addition to health + alert rules; data source health is capped at 25, dashboards at 10, annotations at 20 over the last 24 hours.
+- **Corrections/Lessons Learned:** Type-check and lint both pass via the Glaze CLI; live Grafana behavior still needs verification with real service account permissions.
+- **User Frustrations & Important Remarks:** User emphasized that Grafana should become broader observability and that what the user sees must be configurable.
+
 ### 2026-07-03 — Revert dev-run resolver experiment and document Glaze import
 - **Goal:** User asked to revert the runtime/tooling changes made while trying to run the app, leaving only the README and project group feature changes.
 - **What was done:** Restored `glaze.ts` and `tsconfig.json` to the normal SDK path shape, removed the temporary `.glaze-sdk` ignore/symlink behavior, removed the `sonner` dependency added for Vite dev scanning, and adjusted `README.md` to tell developers to copy/import `Observability Monitor.glaze` from the repo root into the Glaze macOS app before running.

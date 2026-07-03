@@ -77,17 +77,27 @@ function groupInput(req: Record<string, unknown>): { groupId?: string | null; ne
 }
 
 /** Split a creds map into the encrypted secret value + persisted non-secret config. */
-function splitCreds(provider: Provider, creds: Record<string, string>): { secret?: string; config: Record<string, string> } {
+function splitCreds(
+  provider: Provider,
+  creds: Record<string, string>,
+): { secret?: string; config: Record<string, string>; clearedConfigKeys: string[] } {
   const def = registry.get(provider);
   let secret: string | undefined;
   const config: Record<string, string> = {};
+  const clearedConfigKeys: string[] = [];
   for (const field of def.fields) {
-    const value = creds[field.key]?.trim();
-    if (value === undefined || value === "") continue;
-    if (field.secret) secret = value;
-    else config[field.key] = value;
+    const rawValue = creds[field.key];
+    if (rawValue === undefined) continue;
+    const value = rawValue.trim();
+    if (field.secret) {
+      if (value !== "") secret = value;
+    } else if (value === "") {
+      clearedConfigKeys.push(field.key);
+    } else {
+      config[field.key] = value;
+    }
   }
-  return { secret, config };
+  return { secret, config, clearedConfigKeys };
 }
 
 /** Ensure all required fields are present in the effective credential set. */
@@ -171,9 +181,11 @@ export function registerAccountHandlers(): void {
     if (typeof req.enabled === "boolean") patch.enabled = req.enabled;
 
     if (req.creds !== undefined) {
-      const { secret, config } = splitCreds(provider, asCreds(req.creds));
+      const { secret, config, clearedConfigKeys } = splitCreds(provider, asCreds(req.creds));
       // Merge non-secret config over the existing config.
-      const mergedConfig = { ...(existing.config ?? {}), ...config };
+      const mergedConfig = { ...(existing.config ?? {}) };
+      for (const key of clearedConfigKeys) delete mergedConfig[key];
+      Object.assign(mergedConfig, config);
       // Re-validate with the new secret (if provided) or the stored one.
       const effectiveSecret = secret ?? (await getToken(id)) ?? undefined;
       assertRequired(provider, effectiveSecret, mergedConfig);
@@ -201,6 +213,7 @@ export function registerAccountHandlers(): void {
     poller.dropAccount(id);
     logger.info("accounts", "Account removed", { id });
     aggregator.removeAccount(id);
+    aggregator.setKnownAccounts(await listAccounts(), await listGroups());
     pushSnapshot(aggregator.buildSnapshot());
     return { ok: true };
   });

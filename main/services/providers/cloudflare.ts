@@ -1,4 +1,4 @@
-import { fetchCloudflareItems, validateCloudflareToken } from "../cloudflare-api.js";
+import { fetchCloudflareItems, fetchCloudflareLogs, validateCloudflareToken } from "../cloudflare-api.js";
 import type { ProviderDefinition } from "./registry.js";
 
 export const cloudflareProvider: ProviderDefinition = {
@@ -15,5 +15,8 @@ export const cloudflareProvider: ProviderDefinition = {
   },
   fetch(account, creds) {
     return fetchCloudflareItems(account, creds.token, creds.accountId);
+  },
+  fetchLogs(account, creds, item) {
+    return fetchCloudflareLogs(account, creds.token, item);
   },
 };

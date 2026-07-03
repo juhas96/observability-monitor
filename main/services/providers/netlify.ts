@@ -91,6 +91,7 @@ export const netlifyProvider: ProviderDefinition = {
       if (result.status !== "fulfilled") continue;
       const { site, deploys } = result.value;
       for (const dep of deploys) {
+        const url = dep.admin_url || site.admin_url || `https://app.netlify.com/sites/${site.name}/deploys`;
         items.push({
           uid: `${account.id}:netlify-deploy:${dep.id}`,
           accountId: account.id,
@@ -103,7 +104,10 @@ export const netlifyProvider: ProviderDefinition = {
           conclusion: dep.error_message || dep.state,
           createdAt: dep.created_at,
           updatedAt: dep.updated_at || dep.created_at,
-          url: dep.admin_url || site.admin_url || `https://app.netlify.com/sites/${site.name}/deploys`,
+          url,
+          logAvailable: false,
+          logLabel: "Open logs",
+          logFallbackUrl: url,
         });
       }
     }

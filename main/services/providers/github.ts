@@ -1,4 +1,4 @@
-import { fetchGitHubItems, validateGitHubToken } from "../github-api.js";
+import { fetchGitHubItems, fetchGitHubLogs, validateGitHubToken } from "../github-api.js";
 import type { ProviderDefinition } from "./registry.js";
 
 export const githubProvider: ProviderDefinition = {
@@ -16,5 +16,8 @@ export const githubProvider: ProviderDefinition = {
   },
   fetch(account, creds) {
     return fetchGitHubItems(account, creds.token);
+  },
+  fetchLogs(account, creds, item) {
+    return fetchGitHubLogs(account, creds.token, item);
   },
 };

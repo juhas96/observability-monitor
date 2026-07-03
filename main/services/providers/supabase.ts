@@ -5,7 +5,7 @@
  * Credential: personal access token (sbp_…) + project ref.
  */
 
-import type { Account, MonitorItem } from "../types.js";
+import type { Account, MonitorItem, MonitorLogLine, MonitorLogResponse } from "../types.js";
 import type { ProviderDefinition } from "./registry.js";
 
 const API_BASE = "https://api.supabase.com";
@@ -67,6 +67,9 @@ async function fetchMigration(account: Account, token: string, ref: string): Pro
     createdAt: iso,
     updatedAt: iso,
     url: `https://supabase.com/dashboard/project/${ref}/database/migrations`,
+    logAvailable: false,
+    logLabel: "Open logs",
+    logFallbackUrl: `https://supabase.com/dashboard/project/${ref}/database/migrations`,
   };
 }
 
@@ -99,6 +102,48 @@ async function fetchErrorLogs(account: Account, token: string, ref: string): Pro
     createdAt: now,
     updatedAt: now,
     url: `https://supabase.com/dashboard/project/${ref}/logs/postgres-logs`,
+    logAvailable: true,
+    logLabel: "View logs",
+    logFallbackUrl: `https://supabase.com/dashboard/project/${ref}/logs/postgres-logs`,
+    logRef: { projectRef: ref, source: "postgres_logs" },
+  };
+}
+
+interface SbLogRowsResult {
+  result?: Record<string, unknown>[];
+}
+
+function logRowToLine(row: Record<string, unknown>): MonitorLogLine {
+  const timestamp = typeof row.timestamp === "string" ? row.timestamp : undefined;
+  const level = typeof row.level === "string" ? row.level : undefined;
+  const message = typeof row.event_message === "string" && row.event_message.trim() !== ""
+    ? row.event_message
+    : JSON.stringify(row);
+  return { timestamp, level, section: "Postgres logs", message };
+}
+
+async function fetchProjectLogs(account: Account, token: string, ref: string, item: MonitorItem): Promise<MonitorLogResponse> {
+  const sql = [
+    "select timestamp, event_message, m.parsed.error_severity as level",
+    "from postgres_logs cross join unnest(metadata) as m",
+    "where m.parsed.error_severity in ('ERROR','FATAL','PANIC')",
+    "order by timestamp desc",
+    "limit 100",
+  ].join(" ");
+  const res = await sbFetch<SbLogRowsResult>(
+    token,
+    `/v1/projects/${ref}/analytics/endpoints/logs.all?sql=${encodeURIComponent(sql)}`,
+  );
+  if (!res.ok) throw new Error(`Supabase logs are unavailable for this project (status ${res.status}).`);
+  const lines = (res.data.result ?? []).map(logRowToLine);
+  return {
+    itemUid: item.uid,
+    title: account.identity || ref,
+    subtitle: "Recent Postgres error logs",
+    provider: "supabase",
+    fetchedAt: new Date().toISOString(),
+    fallbackUrl: `https://supabase.com/dashboard/project/${ref}/logs/postgres-logs`,
+    lines: lines.length > 0 ? lines : [{ section: "Postgres logs", message: "No recent error logs were returned." }],
   };
 }
 
@@ -124,5 +169,10 @@ export const supabaseProvider: ProviderDefinition = {
       fetchErrorLogs(account, creds.token, ref),
     ]);
     return [migration, logs].filter((i): i is MonitorItem => i !== null);
+  },
+  async fetchLogs(account, creds, item) {
+    const ref = typeof item.logRef?.projectRef === "string" ? item.logRef.projectRef : creds.projectRef;
+    if (!ref) throw new Error("Supabase project ref is missing from this item.");
+    return await fetchProjectLogs(account, creds.token, ref, item);
   },
 };

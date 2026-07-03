@@ -4,7 +4,7 @@ Guidance for AI coding agents (and human contributors) working in this repositor
 
 ## What this app is
 
-**Multi Monitor** — a menu bar + dashboard app that watches CI/CD and ops activity across many accounts of many providers at once (GitHub Actions, Cloudflare Pages/Workers, Supabase, Netlify, Resend, Grafana, Heroku), via a pluggable provider registry. See `.glaze_memory/PROJECT-CONTEXT.md` for the full current-state snapshot and change history — read that first when picking up work here.
+**Multi Monitor** — a menu bar + dashboard app that watches CI/CD, incidents, status, and observability activity across many accounts of many providers at once (GitHub Actions, Cloudflare Pages/Workers, Supabase, Netlify, Resend, Grafana, Heroku, Sentry, PagerDuty, Statuspage, Datadog, Honeycomb), via a pluggable provider registry. See `.glaze_memory/PROJECT-CONTEXT.md` for the full current-state snapshot and change history — read that first when picking up work here.
 
 ## Architecture
 
@@ -35,7 +35,7 @@ glaze.ts         app/window configuration
 
 ## Conventions in this repo
 
-- **Adding a provider** = one adapter module `main/services/providers/<id>.ts` implementing `ProviderDefinition` (`fields`, `validate`, `fetch`), registered in `providers/index.ts`, plus one icon/label entry in `renderer/main/components/provider-meta.tsx`. Everything else (add/edit dialog, dashboard filters, poller, aggregator) is data-driven off the registry — don't add new hardcoded per-provider branches elsewhere.
+- **Adding a provider** = one adapter module `main/services/providers/<id>.ts` implementing `ProviderDefinition` (`fields`, `validate`, `fetch`, plus optional observability hooks such as `fetchSignals`, `fetchIncidents`, `fetchMetricsSummary`, `getDeepLinks`, `fetchLogs`), registered in `providers/index.ts`, plus one icon/label entry in `renderer/main/components/provider-meta.tsx`. Everything else (add/edit dialog, dashboard filters, apps cockpit, poller, aggregator) is data-driven off the registry — don't add new hardcoded per-provider branches elsewhere.
 - **Styling**: Tailwind v4 utilities plus the design-system components already in use (semantic colors, `Text` variants, `rounded-*` roles). Don't hand-roll CSS files or reach for raw Tailwind palette colors.
 - **Surgical edits**: every changed line should trace back to the requested change. Don't refactor unrelated working code or add comments to code you didn't touch.
 - **Minimize round trips**: read every file you need for a change up front and batch independent edits; only sequence calls when one genuinely depends on a prior result's output.
@@ -52,5 +52,5 @@ glaze.ts         app/window configuration
 ## Current data & IPC surface
 
 - **Storage**: `userData/accounts.json` (accounts + project groups, no secrets), `userData/tokens.bin.json` (encrypted secrets), `userData/settings.json` (poll interval + notification flags); dashboard filter keys in renderer localStorage.
-- **IPC channels**: `providers:list`; `groups:list`; `accounts:list/add/update/remove/test`; `monitor:getSnapshot/refresh/getSettings/updateSettings/getStatus`; `monitor:openExternal`; pushed events `monitor:snapshot`, `monitor:accountError`, `monitor:pollingState`, `settings:monitor-changed`.
+- **IPC channels**: `providers:list`; `groups:list`; `accounts:list/add/update/remove/test`; `monitor:getSnapshot/refresh/getSettings/updateSettings/getStatus/getItemLogs`; `monitor:openExternal`; `grafana:getOverview/runLogPreset/runTracePreset/updateObservabilityConfig`; pushed events `monitor:snapshot`, `monitor:accountError`, `monitor:pollingState`, `settings:monitor-changed`.
 - Full detail (key files, components in use, integrations, known pitfalls) lives in `.glaze_memory/PROJECT-CONTEXT.md` — keep this file and that one in sync when either changes.

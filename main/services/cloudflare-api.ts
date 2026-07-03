@@ -6,7 +6,7 @@
  * (+ Workers Builds: Read when available). Account ID is entered by the user.
  */
 
-import type { Account, MonitorItem, NormalizedStatus } from "./types.js";
+import type { Account, MonitorItem, MonitorLogResponse, NormalizedStatus } from "./types.js";
 
 const API_BASE = "https://api.cloudflare.com/client/v4";
 const MAX_PAGES_PROJECTS = 10;
@@ -96,6 +96,12 @@ interface CfPagesDeployment {
   deployment_trigger?: { metadata?: { branch?: string; commit_hash?: string; commit_message?: string } };
 }
 
+interface CfPagesDeploymentLogs {
+  data?: { line?: string; ts?: string }[];
+  includes_container_logs?: boolean;
+  total?: number;
+}
+
 async function fetchPagesItems(account: Account, token: string, accountId: string): Promise<MonitorItem[]> {
   const projects = await cfFetch<CfPagesProject[]>(
     token,
@@ -133,6 +139,10 @@ async function fetchPagesItems(account: Account, token: string, accountId: strin
         url: `${DASH_BASE}/${accountId}/pages/view/${encodeURIComponent(project.name)}`,
         commitSha: dep.deployment_trigger?.metadata?.commit_hash,
         commitMessage: dep.deployment_trigger?.metadata?.commit_message,
+        logAvailable: true,
+        logLabel: "View logs",
+        logFallbackUrl: `${DASH_BASE}/${accountId}/pages/view/${encodeURIComponent(project.name)}`,
+        logRef: { accountId, projectName: project.name, deploymentId: dep.id },
       });
     }
   }
@@ -191,6 +201,9 @@ async function fetchWorkersItems(account: Account, token: string, accountId: str
       createdAt: script.created_on || latest?.created_on || new Date().toISOString(),
       updatedAt: latest?.created_on || script.modified_on || script.created_on || new Date().toISOString(),
       url: `${DASH_BASE}/${accountId}/workers/services/view/${encodeURIComponent(script.id)}`,
+      logAvailable: false,
+      logLabel: "Open logs",
+      logFallbackUrl: `${DASH_BASE}/${accountId}/workers/services/view/${encodeURIComponent(script.id)}/logs`,
     });
   }
   return items;
@@ -210,4 +223,38 @@ export async function fetchCloudflareItems(account: Account, token: string, acco
     throw pages.reason instanceof Error ? pages.reason : new Error(String(pages.reason));
   }
   return items;
+}
+
+export async function fetchCloudflareLogs(_account: Account, token: string, item: MonitorItem): Promise<MonitorLogResponse> {
+  const ref = item.logRef ?? {};
+  const accountId = typeof ref.accountId === "string" ? ref.accountId : "";
+  const projectName = typeof ref.projectName === "string" ? ref.projectName : "";
+  const deploymentId = typeof ref.deploymentId === "string" ? ref.deploymentId : "";
+  if (!accountId || !projectName || !deploymentId) {
+    throw new Error("Cloudflare log metadata is missing from this item.");
+  }
+
+  const res = await cfFetch<CfPagesDeploymentLogs>(
+    token,
+    `/accounts/${accountId}/pages/projects/${encodeURIComponent(projectName)}/deployments/${encodeURIComponent(deploymentId)}/history/logs`,
+  );
+  if (!res.ok) {
+    throw new Error(`Cloudflare Pages deployment logs are unavailable for this item (status ${res.status}).`);
+  }
+
+  const lines = (res.data.data ?? []).map((entry) => ({
+    timestamp: entry.ts,
+    section: "Pages deploy",
+    message: entry.line ?? "",
+  })).filter((line) => line.message.trim() !== "");
+
+  return {
+    itemUid: item.uid,
+    title: projectName,
+    subtitle: `Deployment ${deploymentId}${res.data.includes_container_logs ? " · container logs included" : ""}`,
+    provider: "cloudflare",
+    fetchedAt: new Date().toISOString(),
+    fallbackUrl: item.logFallbackUrl ?? item.url,
+    lines: lines.length > 0 ? lines : [{ message: "No deployment logs were returned for this Pages deployment." }],
+  };
 }

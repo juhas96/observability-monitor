@@ -12,6 +12,7 @@ import {
   Button,
   Text,
   Status,
+  Switch,
   toast,
 } from "@glaze/core/components";
 
@@ -22,6 +23,14 @@ import type { Account, CredentialField, Provider } from "../types";
 
 const NO_GROUP = "__no_group__";
 const NEW_GROUP = "__new_group__";
+
+function defaultCreds(fields: CredentialField[] | undefined): Record<string, string> {
+  const values: Record<string, string> = {};
+  for (const field of fields ?? []) {
+    if (field.defaultValue !== undefined) values[field.key] = field.defaultValue;
+  }
+  return values;
+}
 
 export function AddAccountDialog({
   open,
@@ -54,10 +63,11 @@ export function AddAccountDialog({
   useEffect(() => {
     if (!open) return;
     const initialProvider = editing?.provider ?? providers[0]?.id ?? "github";
+    const initialDefinition = providers.find((p) => p.id === initialProvider);
     const initialGroup = editing?.groupId && groups.some((group) => group.id === editing.groupId) ? editing.groupId : NO_GROUP;
     setProvider(initialProvider);
     setLabel(editing?.label ?? "");
-    setCreds({ ...(editing?.config ?? {}) }); // non-secret fields prefill; secrets stay blank
+    setCreds({ ...defaultCreds(initialDefinition?.fields), ...(editing?.config ?? {}) }); // non-secret fields prefill; secrets stay blank
     setGroupSelection(initialGroup);
     setNewGroupName("");
     setTestResult(null);
@@ -65,6 +75,14 @@ export function AddAccountDialog({
   }, [open, editing, groups, providers]);
 
   const setCred = (key: string, value: string) => setCreds((prev) => ({ ...prev, [key]: value }));
+
+  const handleProviderChange = (value: string) => {
+    const nextProvider = value as Provider;
+    const nextDefinition = providers.find((p) => p.id === nextProvider);
+    setProvider(nextProvider);
+    setCreds(defaultCreds(nextDefinition?.fields));
+    setTestResult(null);
+  };
 
   const handleTest = async () => {
     setTesting(true);
@@ -84,9 +102,14 @@ export function AddAccountDialog({
   };
 
   const handleConfirm = async () => {
-    // Drop empty values so blank secret fields on edit keep the existing token.
+    // Blank secret fields on edit keep the existing token. Non-secret fields are
+    // sent even when blank so optional config can be cleared.
     const trimmed: Record<string, string> = {};
-    for (const [k, v] of Object.entries(creds)) if (v.trim() !== "") trimmed[k] = v.trim();
+    for (const field of fields) {
+      const value = (creds[field.key] ?? "").trim();
+      if (field.secret && value === "") continue;
+      trimmed[field.key] = value;
+    }
     const groupPayload = groupSelection === NEW_GROUP
       ? { newGroupName: newGroupName.trim() }
       : { groupId: groupSelection === NO_GROUP ? null : groupSelection };
@@ -129,7 +152,7 @@ export function AddAccountDialog({
       <div className="flex flex-col gap-4">
         <FieldSet>
           <Field label="Provider" orientation="vertical" className="p-0">
-            <Select value={provider} onValueChange={(v) => setProvider(v as Provider)} disabled={isEditing}>
+            <Select value={provider} onValueChange={handleProviderChange} disabled={isEditing}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
@@ -171,13 +194,20 @@ export function AddAccountDialog({
           ) : null}
 
           {fields.map((field) => (
-            <Field key={field.key} label={field.label} orientation="vertical" className="p-0">
-              <Input
-                type={field.type === "password" ? "password" : "text"}
-                value={creds[field.key] ?? ""}
-                onChange={(e) => setCred(field.key, e.target.value)}
-                placeholder={isEditing && field.secret ? "Leave blank to keep current value" : field.placeholder}
-              />
+            <Field key={field.key} label={field.label} orientation={field.type === "boolean" ? "horizontal" : "vertical"} className="p-0">
+              {field.type === "boolean" ? (
+                <Switch
+                  checked={(creds[field.key] ?? field.defaultValue ?? "false") === "true"}
+                  onCheckedChange={(checked) => setCred(field.key, checked ? "true" : "false")}
+                />
+              ) : (
+                <Input
+                  type={field.type === "password" ? "password" : "text"}
+                  value={creds[field.key] ?? ""}
+                  onChange={(e) => setCred(field.key, e.target.value)}
+                  placeholder={isEditing && field.secret ? "Leave blank to keep current value" : field.placeholder}
+                />
+              )}
             </Field>
           ))}
         </FieldSet>

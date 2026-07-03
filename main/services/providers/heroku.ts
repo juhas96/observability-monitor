@@ -3,7 +3,7 @@
  * Credential: Heroku API key (Account settings → API Key, or `heroku auth:token`).
  */
 
-import type { MonitorItem, NormalizedStatus } from "../types.js";
+import type { MonitorItem, MonitorLogResponse, NormalizedStatus } from "../types.js";
 import type { ProviderDefinition } from "./registry.js";
 
 const API_BASE = "https://api.heroku.com";
@@ -44,6 +44,7 @@ interface HkRelease {
   updated_at?: string;
   description?: string;
   user?: { email?: string };
+  output_stream_url?: string | null;
 }
 
 function mapStatus(status: string): NormalizedStatus {
@@ -57,6 +58,47 @@ function mapStatus(status: string): NormalizedStatus {
     default:
       return "unknown";
   }
+}
+
+function textToLines(text: string) {
+  return text.split(/\r?\n/).filter((line) => line.trim() !== "").map((line) => ({ section: "Release output", message: line }));
+}
+
+async function fetchReleaseOutput(token: string, item: MonitorItem): Promise<MonitorLogResponse> {
+  const ref = item.logRef ?? {};
+  const appId = typeof ref.appId === "string" ? ref.appId : "";
+  const releaseId = typeof ref.releaseId === "string" ? ref.releaseId : "";
+  if (!appId || !releaseId) throw new Error("Heroku release metadata is missing from this item.");
+
+  const release = await herokuFetch<HkRelease>(token, `/apps/${appId}/releases/${releaseId}`);
+  const outputUrl = release.output_stream_url;
+  if (!outputUrl) {
+    return {
+      itemUid: item.uid,
+      title: item.title,
+      subtitle: `v${release.version} release output`,
+      provider: "heroku",
+      fetchedAt: new Date().toISOString(),
+      fallbackUrl: item.logFallbackUrl ?? item.url,
+      lines: [{ section: "Release output", message: "No release phase output is available for this release." }],
+    };
+  }
+
+  const res = await fetch(outputUrl);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Heroku release output ${res.status}: ${res.statusText}${body ? ` - ${body.slice(0, 160)}` : ""}`);
+  }
+  const text = await res.text();
+  return {
+    itemUid: item.uid,
+    title: item.title,
+    subtitle: `v${release.version} release output`,
+    provider: "heroku",
+    fetchedAt: new Date().toISOString(),
+    fallbackUrl: item.logFallbackUrl ?? item.url,
+    lines: text.trim() ? textToLines(text) : [{ section: "Release output", message: "Release output was empty." }],
+  };
 }
 
 export const herokuProvider: ProviderDefinition = {
@@ -99,9 +141,16 @@ export const herokuProvider: ProviderDefinition = {
           updatedAt: rel.updated_at || rel.created_at,
           url: `https://dashboard.heroku.com/apps/${app.name}`,
           actor: rel.user?.email,
+          logAvailable: true,
+          logLabel: "View output",
+          logFallbackUrl: `https://dashboard.heroku.com/apps/${app.name}/activity`,
+          logRef: { appId: app.id, releaseId: rel.id, version: rel.version },
         });
       }
     }
     return items;
+  },
+  async fetchLogs(_account, creds, item) {
+    return await fetchReleaseOutput(creds.token, item);
   },
 };

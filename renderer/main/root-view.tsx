@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as React from "react";
-import { LayoutDashboard, Plug } from "lucide-react";
+import { BellRing, GitCommitHorizontal, LayoutDashboard, LineChart, PanelsTopLeft, Plug, Siren } from "lucide-react";
 import { SplitView, Sidebar, SidebarList, SidebarListItem, Status } from "@glaze/core/components";
 import { useTheme, useConnection, useEnvironment } from "@glaze/core/hooks";
 
@@ -12,6 +12,11 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { path: "/", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
+  { path: "/apps", label: "Apps", icon: <PanelsTopLeft className="size-4" /> },
+  { path: "/insights", label: "Insights", icon: <LineChart className="size-4" /> },
+  { path: "/incidents", label: "Incidents", icon: <Siren className="size-4" /> },
+  { path: "/timeline", label: "Timeline", icon: <GitCommitHorizontal className="size-4" /> },
+  { path: "/grafana", label: "Grafana", icon: <BellRing className="size-4" /> },
   { path: "/accounts", label: "Accounts", icon: <Plug className="size-4" /> },
 ];
 

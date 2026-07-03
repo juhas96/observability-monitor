@@ -6,6 +6,7 @@
 import { Notification, shell, logger } from "@glaze/core/backend";
 
 import type { StatusTransition } from "./diff-engine.js";
+import { isSilenced } from "./triage-store.js";
 import type { MonitorSettings } from "./types.js";
 
 function providerLabel(kind: string): string {
@@ -21,7 +22,7 @@ function providerLabel(kind: string): string {
   }
 }
 
-export function notifyTransitions(transitions: StatusTransition[], settings: MonitorSettings): void {
+export async function notifyTransitions(transitions: StatusTransition[], settings: MonitorSettings): Promise<void> {
   if (!Notification.isSupported()) return;
 
   for (const t of transitions) {
@@ -31,6 +32,7 @@ export function notifyTransitions(transitions: StatusTransition[], settings: Mon
     if (isFailure && !settings.notifyOnFailure) continue;
     if (isSuccess && !settings.notifyOnSuccess) continue;
     if (!isFailure && !isSuccess) continue; // only notify terminal states
+    if (await isSilenced(t.item.uid)) continue;
 
     // When "only notify on change" is off we still only fire on transitions
     // here (the diff-engine only yields transitions), so the flag mainly

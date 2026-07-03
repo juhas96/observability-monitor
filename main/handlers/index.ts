@@ -9,8 +9,11 @@ import { fileURLToPath } from "url";
 
 import { appHandlers } from "./app.js";
 import { registerAccountHandlers } from "./accounts.js";
+import { registerGrafanaHandlers } from "./grafana.js";
+import { registerHistoryHandlers } from "./history.js";
 import { registerMonitorHandlers } from "./monitor.js";
 import { registerProviderHandlers } from "./providers.js";
+import { registerTriageHandlers } from "./triage.js";
 import { registerProviders } from "../services/providers/index.js";
 import { getSettingsWindow, openSettingsWindow } from "../windows/settings-window.js";
 
@@ -47,8 +50,11 @@ export function registerHandlers(): void {
 
   // CI/CD Monitor handlers
   registerAccountHandlers();
+  registerGrafanaHandlers();
+  registerHistoryHandlers();
   registerMonitorHandlers();
   registerProviderHandlers();
+  registerTriageHandlers();
 
   logger.info("handlers", "✓ IPC handlers registered");
 }

@@ -15,6 +15,15 @@ import {
   ScrollText,
   Mail,
   ShieldCheck,
+  HardDrive,
+  LayoutDashboard,
+  MessageSquareText,
+  Bug,
+  Siren,
+  RadioTower,
+  Gauge,
+  Hexagon,
+  GitPullRequest,
   type LucideIcon,
 } from "lucide-react";
 import type { MonitorCategory, Provider } from "../types";
@@ -27,6 +36,11 @@ const PROVIDER_ICONS: Record<Provider, LucideIcon> = {
   resend: Send,
   grafana: BellRing,
   heroku: Server,
+  sentry: Bug,
+  pagerduty: Siren,
+  statuspage: RadioTower,
+  datadog: Gauge,
+  honeycomb: Hexagon,
 };
 
 const PROVIDER_LABELS: Record<Provider, string> = {
@@ -37,6 +51,11 @@ const PROVIDER_LABELS: Record<Provider, string> = {
   resend: "Resend",
   grafana: "Grafana",
   heroku: "Heroku",
+  sentry: "Sentry",
+  pagerduty: "PagerDuty",
+  statuspage: "Statuspage",
+  datadog: "Datadog",
+  honeycomb: "Honeycomb",
 };
 
 const CATEGORY_ICONS: Partial<Record<MonitorCategory, LucideIcon>> = {
@@ -45,6 +64,16 @@ const CATEGORY_ICONS: Partial<Record<MonitorCategory, LucideIcon>> = {
   migration: FileClock,
   log: ScrollText,
   alert: BellRing,
+  datasource: HardDrive,
+  dashboard: LayoutDashboard,
+  annotation: MessageSquareText,
+  incident: Siren,
+  issue: GitPullRequest,
+  monitor: RadioTower,
+  metric: Gauge,
+  slo: ShieldCheck,
+  trace: Activity,
+  statuspage: RadioTower,
   email: Mail,
   domain: ShieldCheck,
   release: Rocket,

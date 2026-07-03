@@ -5,7 +5,7 @@
  * only); fine-grained PAT needs Actions: Read + Metadata: Read.
  */
 
-import type { Account, MonitorItem, NormalizedStatus } from "./types.js";
+import type { Account, MonitorItem, MonitorLogLine, MonitorLogResponse, NormalizedStatus } from "./types.js";
 
 const API_BASE = "https://api.github.com";
 const USER_AGENT = "Glaze-CICD-Monitor";
@@ -52,6 +52,15 @@ interface GhRun {
   created_at: string;
   updated_at: string;
   actor?: { login: string };
+}
+
+interface GhJob {
+  id: number;
+  name: string;
+  status?: string | null;
+  conclusion?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
 }
 
 /** Validate a token and resolve the authenticated login. */
@@ -135,9 +144,74 @@ export async function fetchGitHubItems(account: Account, token: string): Promise
         commitSha: run.head_sha,
         commitMessage: run.display_title,
         actor: run.actor?.login,
+        logAvailable: true,
+        logLabel: "View logs",
+        logFallbackUrl: run.html_url,
+        logRef: { owner: repo.owner, repo: repo.repo, runId: run.id },
       });
     }
   }
 
   return items;
+}
+
+function logTextToLines(text: string, section: string): MonitorLogLine[] {
+  return text.split(/\r?\n/).filter((line) => line.trim() !== "").map((line) => {
+    const match = /^(\d{4}-\d{2}-\d{2}T[^\s]+)\s+(.*)$/.exec(line);
+    return match
+      ? { timestamp: match[1], section, message: match[2] }
+      : { section, message: line };
+  });
+}
+
+async function fetchJobLog(token: string, owner: string, repo: string, jobId: number): Promise<string> {
+  const res = await fetch(`${API_BASE}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/jobs/${jobId}/logs`, {
+    headers: headers(token),
+    redirect: "follow",
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`GitHub ${res.status} on job ${jobId} logs: ${res.statusText}${body ? ` - ${body.slice(0, 160)}` : ""}`);
+  }
+  return await res.text();
+}
+
+export async function fetchGitHubLogs(_account: Account, token: string, item: MonitorItem): Promise<MonitorLogResponse> {
+  const ref = item.logRef ?? {};
+  const owner = typeof ref.owner === "string" ? ref.owner : "";
+  const repo = typeof ref.repo === "string" ? ref.repo : "";
+  const runId = typeof ref.runId === "number" || typeof ref.runId === "string" ? String(ref.runId) : "";
+  if (!owner || !repo || !runId) throw new Error("GitHub log metadata is missing from this item.");
+
+  const jobs = await ghFetch<{ jobs: GhJob[] }>(
+    token,
+    `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/actions/runs/${encodeURIComponent(runId)}/jobs?per_page=100`,
+  );
+  const lines: MonitorLogLine[] = [];
+  const results = await Promise.allSettled((jobs.jobs ?? []).map(async (job) => {
+    const text = await fetchJobLog(token, owner, repo, job.id);
+    return logTextToLines(text, job.name);
+  }));
+
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      lines.push(...result.value);
+    } else {
+      lines.push({ section: "Log fetch", level: "warning", message: result.reason instanceof Error ? result.reason.message : String(result.reason) });
+    }
+  }
+
+  if (lines.length === 0) {
+    lines.push({ message: "No job logs were returned for this workflow run." });
+  }
+
+  return {
+    itemUid: item.uid,
+    title: `${owner}/${repo}`,
+    subtitle: item.subtitle,
+    provider: "github",
+    fetchedAt: new Date().toISOString(),
+    fallbackUrl: item.logFallbackUrl ?? item.url,
+    lines,
+  };
 }
