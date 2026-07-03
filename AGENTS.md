@@ -44,8 +44,10 @@ glaze.ts         app/window configuration
 ## Commands
 
 - Install deps: `npm install --include=dev` from the repo root — a plain `npm install` under a production `NODE_ENV` will prune devDependencies needed for local builds.
-- Static validation: `npm run type-check && npm run lint`.
-- Runtime/UI validation requires the platform's own build pipeline (not a plain `npm run build`/`vite build` invocation) — use whatever build/launch mechanism your agent harness exposes for this app rather than shelling out directly.
+- Run the app: `npm run dev` builds and launches it as a native macOS app (full frontend+backend, hot-reloading renderer). `npm run dev:renderer` runs just the renderer in a browser-based dev server for fast UI iteration when you don't need the native backend/IPC.
+- Production bundle: `npm run build`.
+- Static validation: `npm run type-check && npm run lint`; `npm run format` to auto-format.
+- All of the above shell out to the platform's own CLI (`glaze.ts`) — don't bypass it by invoking `vite`/`tsc`/`eslint` directly, since it wires in platform-specific config.
 
 ## Current data & IPC surface
 
