@@ -92,6 +92,10 @@ function metadataForAccount(
   return metadataByService.get(serviceId);
 }
 
+function sampleAccountGroupId(accountId: string, row: Pick<HistorySampleAccount, "groupId">, accountsById: Map<string, Account>): string | undefined {
+  return row.groupId ?? accountsById.get(accountId)?.groupId;
+}
+
 function matchesMetadataFilters(
   metadata: ServiceMetadata | undefined,
   filters: Pick<InsightsFilters, "owner" | "tier" | "dependency">,
@@ -135,7 +139,7 @@ function countsFor(
   let failure = 0;
   for (const [accountId, row] of Object.entries(sample.perAccount)) {
     if (filters.account !== ALL && accountId !== filters.account) continue;
-    if (filters.group !== ALL && row.groupId !== filters.group) continue;
+    if (filters.group !== ALL && sampleAccountGroupId(accountId, row, accountsById) !== filters.group) continue;
     if (filters.provider !== ALL && row.provider !== filters.provider) continue;
     if (!matchesMetadataFilters(metadataForAccount(accountId, row, accountsById, metadataByService), filters)) continue;
     success += row.counts.success;
@@ -472,7 +476,7 @@ export function InsightsView() {
     value: Object.entries(sample.perAccount)
       .filter(([accountId, row]) =>
         (filters.account === ALL || accountId === filters.account) &&
-        (filters.group === ALL || row.groupId === filters.group) &&
+        (filters.group === ALL || sampleAccountGroupId(accountId, row, accountsById) === filters.group) &&
         (filters.provider === ALL || row.provider === filters.provider) &&
         matchesMetadataFilters(metadataForAccount(accountId, row, accountsById, serviceMetadataById), filters)
       )

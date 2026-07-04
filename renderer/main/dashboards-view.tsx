@@ -327,13 +327,19 @@ function localCapabilityId(source: Extract<DashboardPanel["source"], { kind: "lo
   return Object.entries(LOCAL_METRIC_BY_CAPABILITY).find(([, metric]) => metric === source.metric)?.[0] ?? "local.successFailure";
 }
 
-function panelFromTemplate(capability: DashboardQueryCapability): DashboardPanel | null {
+function withDefaultCheckId(panel: DashboardPanel, checkId: string | undefined): DashboardPanel {
+  if (!checkId || panel.source.kind !== "local") return panel;
+  if (panel.source.checkId || (panel.source.metric !== "checkLatency" && panel.source.metric !== "checkUptime")) return panel;
+  return { ...panel, source: { ...panel.source, checkId } };
+}
+
+function panelFromTemplate(capability: DashboardQueryCapability, defaultCheckId?: string): DashboardPanel | null {
   if (!capability.defaultPanel) return null;
-  return {
+  return withDefaultCheckId({
     id: globalThis.crypto.randomUUID(),
     ...capability.defaultPanel,
     order: 0,
-  };
+  }, defaultCheckId);
 }
 
 function dashboardPanelFromTemplate(template: DashboardPanelTemplate, order: number): DashboardPanel {
@@ -361,9 +367,9 @@ function chartClickPoint(value: unknown): { ts: number; series?: string } | null
   return { ts, series };
 }
 
-function emptyPanel(capability: DashboardQueryCapability | undefined, useDefault = true): DashboardPanel {
+function emptyPanel(capability: DashboardQueryCapability | undefined, useDefault = true, defaultCheckId?: string): DashboardPanel {
   if (capability && useDefault) {
-    const templated = panelFromTemplate(capability);
+    const templated = panelFromTemplate(capability, defaultCheckId);
     if (templated) return templated;
   }
   const localMetric = capability ? LOCAL_METRIC_BY_CAPABILITY[capability.id] : "successFailure";
@@ -376,7 +382,7 @@ function emptyPanel(capability: DashboardQueryCapability | undefined, useDefault
       query: "",
       params: Object.fromEntries((capability?.params ?? []).map((param) => [param.key, param.defaultValue ?? ""])),
     };
-  return {
+  return withDefaultCheckId({
     id: globalThis.crypto.randomUUID(),
     title: capability?.label ?? "New panel",
     source,
@@ -384,7 +390,7 @@ function emptyPanel(capability: DashboardQueryCapability | undefined, useDefault
     width: "half",
     height: "medium",
     order: 0,
-  };
+  }, defaultCheckId);
 }
 
 function clonePanel(panel: DashboardPanel, order: number): DashboardPanel {
@@ -703,6 +709,7 @@ function PanelDialog({
   const capabilities = useMemo(() => capabilitiesQuery.data ?? [], [capabilitiesQuery.data]);
   const defaultCapabilities = useMemo(() => capabilities.filter((capability) => capability.defaultPanel), [capabilities]);
   const customCapabilities = useMemo(() => capabilities.filter((capability) => capability.requiresQuery), [capabilities]);
+  const defaultCheckId = checksQuery.data?.[0]?.id;
   const [panel, setPanel] = useState<DashboardPanel>(() => emptyPanel(undefined));
   const [mode, setMode] = useState<"default" | "custom">("default");
   const [capabilitySearch, setCapabilitySearch] = useState("");
@@ -727,13 +734,13 @@ function PanelDialog({
       : undefined;
     setMode(editing?.source.kind === "provider" && editingCapability?.requiresQuery && !isDefaultPanelInstance(editing, editingCapability) ? "custom" : "default");
     const firstDefault = defaultCapabilities[0] ?? capabilities[0];
-    setPanel(editing ?? emptyPanel(firstDefault));
-  }, [capabilities, defaultCapabilities, editing, open]);
+    setPanel(editing ?? emptyPanel(firstDefault, true, defaultCheckId));
+  }, [capabilities, defaultCapabilities, defaultCheckId, editing, open]);
 
   const setCapability = (capabilityKey: string) => {
     const capability = capabilities.find((candidate) => `${candidate.accountId ?? "local"}:${candidate.id}` === capabilityKey);
     if (!capability) return;
-    const next = emptyPanel(capability, mode === "default");
+    const next = emptyPanel(capability, mode === "default", defaultCheckId);
     setPanel((current) => ({
       ...next,
       id: current.id,
@@ -750,7 +757,7 @@ function PanelDialog({
     const capability = nextMode === "default" ? defaultCapabilities[0] : customCapabilities[0];
     if (!capability) return;
     setPanel((current) => ({
-      ...emptyPanel(capability, nextMode === "default"),
+      ...emptyPanel(capability, nextMode === "default", defaultCheckId),
       id: current.id,
       order: current.order,
       title: current.title || capability.label,
@@ -1554,6 +1561,7 @@ function TablePanel({ result }: { result: DashboardPanelResult }) {
 
 function scopedPanel(panel: DashboardPanel, filters: DashboardRuntimeFilters): DashboardPanel {
   if (panel.source.kind !== "local") return panel;
+  const supportsCheckFilter = panel.source.metric === "checkLatency" || panel.source.metric === "checkUptime";
   return {
     ...panel,
     source: {
@@ -1561,7 +1569,7 @@ function scopedPanel(panel: DashboardPanel, filters: DashboardRuntimeFilters): D
       groupId: panel.source.groupId ?? (filters.group === ALL ? undefined : filters.group),
       provider: panel.source.provider ?? (filters.provider === ALL ? undefined : filters.provider as Provider),
       accountId: panel.source.accountId ?? (filters.account === ALL ? undefined : filters.account),
-      checkId: panel.source.checkId ?? (filters.check === ALL ? undefined : filters.check),
+      checkId: panel.source.checkId ?? (supportsCheckFilter && filters.check !== ALL ? filters.check : undefined),
       owner: panel.source.owner ?? (filters.owner === ALL ? undefined : filters.owner),
       tier: panel.source.tier ?? (filters.tier === "all" ? undefined : filters.tier),
       dependency: panel.source.dependency ?? (filters.dependency === ALL ? undefined : filters.dependency),

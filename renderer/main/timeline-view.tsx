@@ -303,15 +303,17 @@ function TimelineChart({
   dateRange,
   laneBy,
   groupsById,
+  accountsById,
 }: {
   events: HistoryEvent[];
   dateRange: TimelineFilters["dateRange"];
   laneBy: "group" | "provider";
   groupsById: Map<string, ProjectGroup>;
+  accountsById: Map<string, Account>;
 }) {
   const { start, end } = dateRangeBounds(dateRange);
   const points = events.map((event): TimelinePoint => {
-    const laneId = laneBy === "provider" ? event.provider : event.groupId ?? "ungrouped";
+    const laneId = laneBy === "provider" ? event.provider : event.groupId ?? accountsById.get(event.accountId)?.groupId ?? "ungrouped";
     return {
       x: new Date(event.ts).getTime(),
       y: laneLabel(laneId, laneBy, groupsById),
@@ -588,7 +590,7 @@ export function TimelineView() {
         ) : (
           <>
             <section className="rounded-lg border border-separator p-3">
-              <TimelineChart events={events} dateRange={filters.dateRange} laneBy={laneBy} groupsById={groupsById} />
+              <TimelineChart events={events} dateRange={filters.dateRange} laneBy={laneBy} groupsById={groupsById} accountsById={accountsById} />
             </section>
             <section className="flex flex-col gap-2">
               <div className="px-2">

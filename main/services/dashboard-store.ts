@@ -78,6 +78,10 @@ function normalizeScopeFields(source: Record<string, unknown>): DashboardPanelSc
   };
 }
 
+function hasScopeFields(scope: DashboardPanelScope): boolean {
+  return Object.values(scope).some((value) => value !== undefined);
+}
+
 function normalizeProviderParams(value: unknown): Record<string, string> | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const entries = Object.entries(value)
@@ -138,6 +142,7 @@ function normalizeDashboard(input: DashboardInput, existing?: DashboardDefinitio
   const name = optionalTrimmedString(input.name);
   if (!name) throw new Error("Dashboard name is required.");
   const range = normalizeRange(input.range);
+  const variables = normalizeScopeFields(asRecord(input.variables));
   const panels = (Array.isArray(input.panels) ? input.panels : [])
     .map((panel, index) => normalizePanel(panel, index, range))
     .filter((panel): panel is DashboardPanel => panel !== null)
@@ -149,7 +154,7 @@ function normalizeDashboard(input: DashboardInput, existing?: DashboardDefinitio
     description: optionalTrimmedString(input.description),
     range,
     refreshSeconds: input.refreshSeconds && input.refreshSeconds >= 15 ? Math.round(input.refreshSeconds) : undefined,
-    variables: Object.keys(normalizeScopeFields(asRecord(input.variables))).length > 0 ? normalizeScopeFields(asRecord(input.variables)) : undefined,
+    variables: hasScopeFields(variables) ? variables : undefined,
     panels,
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,

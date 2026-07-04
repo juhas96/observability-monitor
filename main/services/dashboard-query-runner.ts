@@ -4,7 +4,7 @@
  */
 
 import { buildSnapshot } from "./aggregator.js";
-import { getAccount, listAccounts } from "./accounts-store.js";
+import { getAccount, listAccounts, listGroups } from "./accounts-store.js";
 import { listChecks } from "./checks-store.js";
 import { getCheckLatencySeries, getEvents, getSeries } from "./history-store.js";
 import { listServiceMetadata } from "./service-metadata-store.js";
@@ -31,6 +31,7 @@ import type {
 const STATUSES: NormalizedStatus[] = ["success", "failure", "warning", "running", "queued", "cancelled", "info", "unknown"];
 const ANNOTATION_EVENT_TYPES = ["deploy", "failure", "recovery", "alert", "incident"] as const;
 const MAX_ANNOTATIONS = 30;
+const MAX_SNAPSHOT_BREAKDOWN_STATS = 6;
 
 const LOCAL_CAPABILITIES: DashboardQueryCapability[] = [
   {
@@ -222,19 +223,31 @@ function sampleAccountMatches(
   metadataByService: Map<string, ServiceMetadata>,
 ): boolean {
   if (source.accountId && accountId !== source.accountId) return false;
-  if (source.groupId && row.groupId !== source.groupId) return false;
+  if (source.groupId && (row.groupId ?? accountsById.get(accountId)?.groupId) !== source.groupId) return false;
   if (source.provider && row.provider !== source.provider) return false;
   if (!matchesServiceMetadata(source, accountMetadata(accountId, row, accountsById, metadataByService))) return false;
   return true;
+}
+
+function aggregateCounts(sample: HistorySample): Record<NormalizedStatus, number> {
+  const counts = Object.fromEntries(STATUSES.map((status) => [status, 0])) as Record<NormalizedStatus, number>;
+  const rows = Object.values(sample.perAccount);
+  if (rows.length === 0) {
+    counts.success = sample.successCount;
+    counts.failure = sample.failureCount;
+    return counts;
+  }
+  for (const row of rows) {
+    for (const status of STATUSES) counts[status] += row.counts[status];
+  }
+  return counts;
 }
 
 function scopedCounts(sample: HistorySample, source: DashboardLocalSource, accountsById: Map<string, Account>, metadataByService: Map<string, ServiceMetadata>): Record<NormalizedStatus, number> {
   const counts = Object.fromEntries(STATUSES.map((status) => [status, 0])) as Record<NormalizedStatus, number>;
   const scopedAccounts = scopedAccountIds(source);
   if (!source.accountId && !source.groupId && !source.provider && !hasServiceMetadataScope(source)) {
-    counts.success = sample.successCount;
-    counts.failure = sample.failureCount;
-    return counts;
+    return aggregateCounts(sample);
   }
   for (const [accountId, row] of Object.entries(sample.perAccount)) {
     if (scopedAccounts && !scopedAccounts.has(accountId)) continue;
@@ -291,6 +304,23 @@ function tableRow(row: Record<string, unknown>): DashboardTableRow {
   return out;
 }
 
+function incrementCount(counts: Map<string, number>, key: string, amount = 1): void {
+  counts.set(key, (counts.get(key) ?? 0) + amount);
+}
+
+function appendCountBreakdown(
+  stats: DashboardStat[],
+  prefix: string,
+  counts: Map<string, number>,
+  labelFor: Map<string, string>,
+): void {
+  for (const [key, value] of [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || (labelFor.get(a[0]) ?? a[0]).localeCompare(labelFor.get(b[0]) ?? b[0]))
+    .slice(0, MAX_SNAPSHOT_BREAKDOWN_STATS)) {
+    stats.push({ label: `${prefix} · ${labelFor.get(key) ?? key}`, value });
+  }
+}
+
 async function localAnnotations(
   source: DashboardLocalSource,
   range: HistoryRange,
@@ -338,39 +368,64 @@ async function runLocalPanel(source: DashboardLocalSource, range: HistoryRange):
       .filter((event) => !source.accountId || event.accountId === source.accountId)
       .filter((event) => matchesServiceMetadata(source, accountMetadata(event.accountId, { groupId: event.groupId }, accountsById, metadataByService)))
       .slice(0, 100)
-      .map((event) => tableRow({
-        time: new Date(event.ts).toLocaleString(),
-        type: event.type,
-        provider: event.provider,
-        title: event.title,
-        status: event.status,
-        severity: event.severity,
-        __eventId: event.id,
-        __eventTs: event.ts,
-        __eventType: event.type,
-        __eventProvider: event.provider,
-        __eventAccountId: event.accountId,
-        __eventGroupId: event.groupId,
-        __eventSourceUid: event.sourceUid,
-        __eventStatus: event.status,
-        __eventSeverity: event.severity,
-        __url: event.url,
-        __urlLabel: "Open event",
-      }));
+      .map((event) => {
+        const groupId = event.groupId ?? accountsById.get(event.accountId)?.groupId;
+        return tableRow({
+          time: new Date(event.ts).toLocaleString(),
+          type: event.type,
+          provider: event.provider,
+          title: event.title,
+          status: event.status,
+          severity: event.severity,
+          __eventId: event.id,
+          __eventTs: event.ts,
+          __eventType: event.type,
+          __eventProvider: event.provider,
+          __eventAccountId: event.accountId,
+          __eventGroupId: groupId,
+          __eventSourceUid: event.sourceUid,
+          __eventStatus: event.status,
+          __eventSeverity: event.severity,
+          __url: event.url,
+          __urlLabel: "Open event",
+        });
+      });
     return { kind: "events", generatedAt, rows, columns: ["time", "type", "provider", "title", "status", "severity"] };
   }
 
   if (source.metric === "snapshotCounts") {
     const snapshot = buildSnapshot();
-    const accountIds = new Set(
-      accounts
-        .filter((account) => accountMatchesSource(account, source, metadataByService))
-        .map((account) => account.id),
-    );
+    const groups = await listGroups();
+    const groupsById = new Map(groups.map((group) => [group.id, group]));
+    const matchingAccounts = accounts.filter((account) => accountMatchesSource(account, source, metadataByService));
+    const accountIds = new Set(matchingAccounts.map((account) => account.id));
     const items = snapshot.items.filter((item) => accountIds.has(item.accountId));
     const incidents = snapshot.incidents.filter((incident) => accountIds.has(incident.accountId) && incident.status !== "resolved");
     const alerts = snapshot.signals.filter((signal) => accountIds.has(signal.accountId) && signal.kind === "alert");
-    const providers = new Set(items.map((item) => item.provider));
+    const providers = new Set(matchingAccounts.map((account) => account.provider));
+    const providerCounts = new Map<string, number>();
+    const providerLabels = new Map<string, string>();
+    const groupCounts = new Map<string, number>();
+    const groupLabels = new Map<string, string>();
+    const accountCounts = new Map<string, number>();
+    const accountLabels = new Map<string, string>();
+
+    for (const account of matchingAccounts) {
+      providerCounts.set(account.provider, 0);
+      providerLabels.set(account.provider, account.provider);
+      const groupKey = account.groupId ?? "ungrouped";
+      groupCounts.set(groupKey, 0);
+      groupLabels.set(groupKey, account.groupId ? (groupsById.get(account.groupId)?.name ?? account.groupId) : "Ungrouped");
+      accountCounts.set(account.id, 0);
+      accountLabels.set(account.id, account.label);
+    }
+    for (const item of items) {
+      const account = accountsById.get(item.accountId);
+      if (!account) continue;
+      incrementCount(providerCounts, item.provider);
+      incrementCount(groupCounts, account.groupId ?? "ungrouped");
+      incrementCount(accountCounts, account.id);
+    }
     const stats: DashboardStat[] = [
       { label: "Items", value: items.length },
       { label: "Open incidents", value: incidents.length, status: incidents.length ? "failure" : "success" },
@@ -378,6 +433,9 @@ async function runLocalPanel(source: DashboardLocalSource, range: HistoryRange):
       { label: "Providers", value: providers.size },
       { label: "Accounts", value: accountIds.size },
     ];
+    appendCountBreakdown(stats, "Provider", providerCounts, providerLabels);
+    appendCountBreakdown(stats, "Group", groupCounts, groupLabels);
+    appendCountBreakdown(stats, "Account", accountCounts, accountLabels);
     return { kind: "stat", generatedAt, stats };
   }
 

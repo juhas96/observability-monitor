@@ -310,8 +310,9 @@ function filteredDashboard(
   selectedGroupIds: Set<string>,
   selectedCheckIds: Set<string>,
 ): DashboardDefinition | null {
+  if (dashboard.variables && !scopeCompatible(dashboard.variables, selectedAccountIds, selectedGroupIds, selectedCheckIds)) return null;
   const panels = dashboard.panels.filter((panel) => panelCompatible(panel, selectedAccountIds, selectedGroupIds, selectedCheckIds));
-  if (panels.length === 0) return null;
+  if (dashboard.panels.length > 0 && panels.length === 0) return null;
   return { ...dashboard, panels };
 }
 
@@ -492,6 +493,27 @@ function remapPanel(panel: unknown, maps: {
   return { ...(raw as unknown as DashboardPanel), id: randomUUID(), source: next };
 }
 
+function remapDashboardVariables(variables: unknown, maps: {
+  accountIds: Map<string, string>;
+  groupIds: Map<string, string>;
+  checkIds: Map<string, string>;
+}): DashboardPanelScope | undefined {
+  const raw = asRecord(variables);
+  const next: DashboardPanelScope = {
+    provider: isProvider(raw.provider) ? raw.provider : undefined,
+    owner: clean(raw.owner),
+    tier: clean(raw.tier) as DashboardPanelScope["tier"],
+    dependency: clean(raw.dependency),
+  };
+  const accountId = clean(raw.accountId);
+  if (accountId) next.accountId = maps.accountIds.get(accountId);
+  const groupId = clean(raw.groupId);
+  if (groupId) next.groupId = maps.groupIds.get(groupId);
+  const checkId = clean(raw.checkId);
+  if (checkId) next.checkId = maps.checkIds.get(checkId);
+  return Object.values(next).some(Boolean) ? next : undefined;
+}
+
 function remapServiceId(serviceId: string, maps: {
   accountIds: Map<string, string>;
   groupIds: Map<string, string>;
@@ -541,6 +563,7 @@ export function registerSetupHandlers(): void {
     for (const rule of selectedRules) if (rule.scope.groupId) neededGroupIds.add(rule.scope.groupId);
     for (const slo of selectedSlos) if (slo.scope.groupId) neededGroupIds.add(slo.scope.groupId);
     for (const dashboard of selectedDashboards) {
+      if (dashboard.variables?.groupId) neededGroupIds.add(dashboard.variables.groupId);
       for (const panel of dashboard.panels) {
         if (panel.source.kind === "local" && panel.source.groupId) neededGroupIds.add(panel.source.groupId);
       }
@@ -797,7 +820,7 @@ export function registerSetupHandlers(): void {
       const panels = sourcePanels
         .map((panel) => remapPanel(panel, { accountIds, groupIds, checkIds }))
         .filter((panel): panel is DashboardPanel => panel !== null);
-      if (panels.length === 0) {
+      if (sourcePanels.length > 0 && panels.length === 0) {
         dashboardsSkipped += 1;
         continue;
       }
@@ -808,6 +831,7 @@ export function registerSetupHandlers(): void {
         refreshSeconds: typeof dashboard.refreshSeconds === "number" && Number.isFinite(dashboard.refreshSeconds)
           ? dashboard.refreshSeconds
           : undefined,
+        variables: remapDashboardVariables(dashboard.variables, { accountIds, groupIds, checkIds }),
         panels,
       };
       await saveDashboard(input);

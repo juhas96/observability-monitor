@@ -202,13 +202,27 @@ function capabilitySuffix(capabilityId: string, prefix: string): string | undefi
   return capabilityId.startsWith(`${prefix}:`) ? capabilityId.slice(prefix.length + 1) : undefined;
 }
 
-function selectedDashboardDatasource(query: DashboardProviderQuery, creds: Record<string, string>, prefix: string, fallbackKey?: string): string {
+async function selectedDashboardDatasource(
+  baseUrl: string,
+  token: string,
+  query: DashboardProviderQuery,
+  creds: Record<string, string>,
+  prefix: string,
+  type: string,
+  fallbackKey?: string,
+): Promise<string> {
   const explicit = query.params?.datasourceUid || capabilitySuffix(query.capabilityId, prefix);
   if (explicit) return explicit;
   const config = parseObservabilityConfig(creds.grafanaObservability);
   const fallback = fallbackKey === "loki" ? config.lokiDataSourceUid : fallbackKey === "tempo" ? config.tempoDataSourceUid : undefined;
-  if (!fallback) throw new Error("Select a Grafana data source for this panel.");
-  return fallback;
+  if (fallback) return fallback;
+  const discovered = firstDatasourceUid(await dashboardDataSources(baseUrl, token), type);
+  if (!discovered) throw new Error("Select a Grafana data source for this panel.");
+  return discovered;
+}
+
+function firstDatasourceUid(dataSources: GrafanaDataSource[], type: string): string | undefined {
+  return dataSources.find((source) => source.uid && source.type === type)?.uid;
 }
 
 function exploreUrl(baseUrl: string, pane: Record<string, unknown>): string {
@@ -309,7 +323,7 @@ async function runDashboardDataSources(baseUrl: string, token: string): Promise<
 
 async function runDashboardLoki(baseUrl: string, token: string, query: DashboardProviderQuery, creds: Record<string, string>): Promise<DashboardPanelResult> {
   if (!query.query?.trim()) throw new Error("LogQL query is required.");
-  const datasourceUid = selectedDashboardDatasource(query, creds, "grafana.loki", "loki");
+  const datasourceUid = await selectedDashboardDatasource(baseUrl, token, query, creds, "grafana.loki", "loki", "loki");
   const bounds = rangeBounds(query.range);
   const limit = parseLimit(query.params?.limit, 100, 300);
   const url = grafanaLogsUrl(baseUrl, datasourceUid, query.query, bounds);
@@ -343,7 +357,7 @@ async function runDashboardLoki(baseUrl: string, token: string, query: Dashboard
 
 async function runDashboardTempo(baseUrl: string, token: string, query: DashboardProviderQuery, creds: Record<string, string>): Promise<DashboardPanelResult> {
   const traceQuery = query.query?.trim() || "{}";
-  const datasourceUid = selectedDashboardDatasource(query, creds, "grafana.tempo", "tempo");
+  const datasourceUid = await selectedDashboardDatasource(baseUrl, token, query, creds, "grafana.tempo", "tempo", "tempo");
   const bounds = rangeBounds(query.range);
   const limit = parseLimit(query.params?.limit, 50, 100);
   const params = new URLSearchParams({
@@ -373,7 +387,7 @@ async function runDashboardTempo(baseUrl: string, token: string, query: Dashboar
 }
 
 async function runDashboardTempoServices(baseUrl: string, token: string, query: DashboardProviderQuery, creds: Record<string, string>): Promise<DashboardPanelResult> {
-  const datasourceUid = selectedDashboardDatasource(query, creds, "grafana.tempo-services", "tempo");
+  const datasourceUid = await selectedDashboardDatasource(baseUrl, token, query, creds, "grafana.tempo-services", "tempo", "tempo");
   const bounds = rangeBounds(query.range);
   const limit = parseLimit(query.params?.limit, 100, 300);
   const params = new URLSearchParams({
@@ -708,8 +722,10 @@ export const grafanaProvider: ProviderDefinition = {
   async getDashboardQueryCapabilities(_account, creds) {
     const dataSources = await dashboardDataSources(creds.baseUrl, creds.token).catch(() => []);
     const config = parseObservabilityConfig(creds.grafanaObservability);
-    const hasLokiSource = Boolean(config.lokiDataSourceUid) || dataSources.some((source) => source.uid && source.type === "loki");
-    const hasTempoSource = Boolean(config.tempoDataSourceUid) || dataSources.some((source) => source.uid && source.type === "tempo");
+    const defaultLokiUid = config.lokiDataSourceUid || firstDatasourceUid(dataSources, "loki");
+    const defaultTempoUid = config.tempoDataSourceUid || firstDatasourceUid(dataSources, "tempo");
+    const hasLokiSource = Boolean(defaultLokiUid);
+    const hasTempoSource = Boolean(defaultTempoUid);
     const capabilities: DashboardQueryCapability[] = [
       {
         id: "grafana.alerts",
@@ -752,7 +768,7 @@ export const grafanaProvider: ProviderDefinition = {
         resultKind: "logs",
         defaultVisualization: "logs",
         params: [
-          { key: "datasourceUid", label: "Data source UID", required: false, placeholder: "Defaults to Grafana Loki setting" },
+          { key: "datasourceUid", label: "Data source UID", required: false, placeholder: "Defaults to Grafana Loki setting", defaultValue: defaultLokiUid },
           { key: "limit", label: "Limit", required: false, defaultValue: "100" },
         ],
       });
@@ -773,14 +789,14 @@ export const grafanaProvider: ProviderDefinition = {
             accountId: _account.id,
             capabilityId: "grafana.tempo",
             query: "{}",
-            params: { limit: "50" },
+            params: { datasourceUid: defaultTempoUid ?? "", limit: "50" },
           },
           visualization: "traces",
           width: "full",
           height: "large",
         },
         params: [
-          { key: "datasourceUid", label: "Data source UID", required: false, placeholder: "Defaults to Grafana Tempo setting" },
+          { key: "datasourceUid", label: "Data source UID", required: false, placeholder: "Defaults to Grafana Tempo setting", defaultValue: defaultTempoUid },
           { key: "limit", label: "Limit", required: false, defaultValue: "50" },
           { key: "minDuration", label: "Min duration", required: false, placeholder: "100ms" },
           { key: "maxDuration", label: "Max duration", required: false, placeholder: "5s" },
@@ -799,14 +815,14 @@ export const grafanaProvider: ProviderDefinition = {
             kind: "provider",
             accountId: _account.id,
             capabilityId: "grafana.tempo-services",
-            params: { limit: "100" },
+            params: { datasourceUid: defaultTempoUid ?? "", limit: "100" },
           },
           visualization: "table",
           width: "half",
           height: "medium",
         },
         params: [
-          { key: "datasourceUid", label: "Data source UID", required: false, placeholder: "Defaults to Grafana Tempo setting" },
+          { key: "datasourceUid", label: "Data source UID", required: false, placeholder: "Defaults to Grafana Tempo setting", defaultValue: defaultTempoUid },
           { key: "limit", label: "Limit", required: false, defaultValue: "100" },
         ],
       });

@@ -3,6 +3,7 @@
  * The data is local-only JSON in userData and contains no provider secrets.
  */
 
+import { listAccounts } from "./accounts-store.js";
 import { DataStore } from "./data-store.js";
 import type { StatusTransition } from "./diff-engine.js";
 import { getSettings } from "./settings-store.js";
@@ -43,6 +44,8 @@ interface HistoryData {
   slos: SloDefinition[];
   checkSamples: CheckSampleRow[];
 }
+
+type AccountGroupLookup = Map<string, string | undefined>;
 
 const DEFAULT_DATA: HistoryData = { version: 1, samples: [], events: [], slos: [], checkSamples: [] };
 const store = new DataStore<HistoryData>("history.json", DEFAULT_DATA);
@@ -353,16 +356,29 @@ function accountStatus(row: HistorySampleAccount): NormalizedStatus {
   return worstStatus(statuses);
 }
 
+async function currentAccountGroups(): Promise<AccountGroupLookup> {
+  const accounts = await listAccounts();
+  return new Map(accounts.map((account) => [account.id, account.groupId]));
+}
+
+function sampleAccountGroupId(accountId: string, row: Pick<HistorySampleAccount, "groupId">, accountGroups?: AccountGroupLookup): string | undefined {
+  return row.groupId ?? accountGroups?.get(accountId);
+}
+
+function eventGroupId(event: HistoryEvent, accountGroups?: AccountGroupLookup): string | undefined {
+  return event.groupId ?? accountGroups?.get(event.accountId);
+}
+
 function scopeSample(
   sample: HistorySample,
-  filters: { groupId?: string; accountId?: string; provider?: string },
+  filters: { groupId?: string; accountId?: string; provider?: string; accountGroups?: AccountGroupLookup },
 ): HistorySample | null {
   if (!filters.groupId && !filters.accountId && !filters.provider) return sample;
 
   const perAccount = Object.fromEntries(
     Object.entries(sample.perAccount).filter(([accountId, row]) => {
       if (filters.accountId && accountId !== filters.accountId) return false;
-      if (filters.groupId && row.groupId !== filters.groupId) return false;
+      if (filters.groupId && sampleAccountGroupId(accountId, row, filters.accountGroups) !== filters.groupId) return false;
       if (filters.provider && row.provider !== filters.provider) return false;
       return true;
     }),
@@ -399,17 +415,17 @@ function retainedRows<T extends { ts: string }>(rows: T[], retentionMs: number):
     .sort((a, b) => validTime(a.ts) - validTime(b.ts));
 }
 
-function sampleMatchesScope(sample: HistorySample, slo: SloDefinition): boolean {
+function sampleMatchesScope(sample: HistorySample, slo: SloDefinition, accountGroups?: AccountGroupLookup): boolean {
   if (!slo.scope.accountId && !slo.scope.groupId && !slo.scope.provider) return true;
   return Object.entries(sample.perAccount).some(([accountId, row]) => {
     if (slo.scope.accountId && accountId !== slo.scope.accountId) return false;
-    if (slo.scope.groupId && row.groupId !== slo.scope.groupId) return false;
+    if (slo.scope.groupId && sampleAccountGroupId(accountId, row, accountGroups) !== slo.scope.groupId) return false;
     if (slo.scope.provider && row.provider !== slo.scope.provider) return false;
     return true;
   });
 }
 
-function scopedCounts(sample: HistorySample, slo: SloDefinition): { success: number; failure: number } {
+function scopedCounts(sample: HistorySample, slo: SloDefinition, accountGroups?: AccountGroupLookup): { success: number; failure: number } {
   if (!slo.scope.accountId && !slo.scope.groupId && !slo.scope.provider) {
     return { success: sample.successCount, failure: sample.failureCount };
   }
@@ -417,7 +433,7 @@ function scopedCounts(sample: HistorySample, slo: SloDefinition): { success: num
   let failure = 0;
   for (const [accountId, row] of Object.entries(sample.perAccount)) {
     if (slo.scope.accountId && accountId !== slo.scope.accountId) continue;
-    if (slo.scope.groupId && row.groupId !== slo.scope.groupId) continue;
+    if (slo.scope.groupId && sampleAccountGroupId(accountId, row, accountGroups) !== slo.scope.groupId) continue;
     if (slo.scope.provider && row.provider !== slo.scope.provider) continue;
     success += row.counts.success;
     failure += row.counts.failure;
@@ -425,11 +441,11 @@ function scopedCounts(sample: HistorySample, slo: SloDefinition): { success: num
   return { success, failure };
 }
 
-function sloStatus(slo: SloDefinition, samples: HistorySample[]): SloStatus {
-  const scoped = samples.filter((sample) => sampleMatchesScope(sample, slo));
+function sloStatus(slo: SloDefinition, samples: HistorySample[], accountGroups?: AccountGroupLookup): SloStatus {
+  const scoped = samples.filter((sample) => sampleMatchesScope(sample, slo, accountGroups));
   const totals = scoped.reduce(
     (sum, sample) => {
-      const counts = scopedCounts(sample, slo);
+      const counts = scopedCounts(sample, slo, accountGroups);
       return { success: sum.success + counts.success, failure: sum.failure + counts.failure };
     },
     { success: 0, failure: 0 },
@@ -448,7 +464,7 @@ function sloStatus(slo: SloDefinition, samples: HistorySample[]): SloStatus {
   let runningSuccess = 0;
   let runningFailure = 0;
   const series = scoped.map((sample) => {
-    const counts = scopedCounts(sample, slo);
+    const counts = scopedCounts(sample, slo, accountGroups);
     runningSuccess += counts.success;
     runningFailure += counts.failure;
     const runningAttempts = runningSuccess + runningFailure;
@@ -567,8 +583,9 @@ export async function getSeries(
 ): Promise<HistorySample[]> {
   const data = await store.load();
   const retentionMs = await currentRetentionMs();
+  const accountGroups = filters.groupId ? await currentAccountGroups() : undefined;
   const samples = filteredSamples(data, range, retentionMs)
-    .map((sample) => scopeSample(sample, filters))
+    .map((sample) => scopeSample(sample, { ...filters, accountGroups }))
     .filter((sample): sample is HistorySample => sample !== null);
   const { bucketMs } = dateWindow(range, Date.now(), retentionMs);
   return collapseSamples(samples, bucketMs);
@@ -595,12 +612,13 @@ export async function getEvents(filters: {
   const data = await store.load();
   const retentionMs = await currentRetentionMs();
   const { start, end } = dateWindow(filters.range, Date.now(), retentionMs);
+  const accountGroups = filters.groupId ? await currentAccountGroups() : undefined;
   return data.events
     .filter((event) => {
       const ts = new Date(event.ts).getTime();
       return ts >= start && ts <= end;
     })
-    .filter((event) => !filters.groupId || event.groupId === filters.groupId)
+    .filter((event) => !filters.groupId || eventGroupId(event, accountGroups) === filters.groupId)
     .filter((event) => !filters.accountId || event.accountId === filters.accountId)
     .filter((event) => !filters.provider || event.provider === filters.provider)
     .filter((event) => !filters.status || event.status === filters.status)
@@ -691,10 +709,11 @@ export async function deleteSlo(id: string): Promise<void> {
 export async function getSloStatus(): Promise<SloStatus[]> {
   const data = await store.load();
   const retentionDays = await currentRetentionDays();
+  const accountGroups = data.slos.some((slo) => Boolean(slo.scope.groupId)) ? await currentAccountGroups() : undefined;
   return data.slos.map((slo) => {
     const effectiveSlo = { ...slo, windowDays: Math.min(slo.windowDays, retentionDays) };
     const start = Date.now() - effectiveSlo.windowDays * DAY_MS;
     const samples = data.samples.filter((sample) => new Date(sample.ts).getTime() >= start);
-    return sloStatus(effectiveSlo, samples);
+    return sloStatus(effectiveSlo, samples, accountGroups);
   });
 }

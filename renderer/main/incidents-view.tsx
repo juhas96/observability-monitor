@@ -1625,6 +1625,10 @@ export function IncidentsView() {
   const [storedFilters, setFilters, resetFilters] = useStoredState<IncidentsFilters>(FILTER_KEY, DEFAULT_FILTERS);
   const filters: IncidentsFilters = { ...DEFAULT_FILTERS, ...storedFilters, dateRange: storedFilters.dateRange ?? DEFAULT_FILTERS.dateRange };
   const dateBounds = retainedHistoryDateBounds(historyStatsQuery.data);
+  const accounts = accountsQuery.data ?? [];
+  const groups = groupsQuery.data ?? [];
+  const accountsById = useMemo(() => accountMap(accounts), [accounts]);
+  const groupsById = useMemo(() => groupMap(groups), [groups]);
   const historyQuery = useHistoryEvents({
     range: filters.dateRange,
     groupId: filters.group === ALL ? undefined : filters.group,
@@ -1731,12 +1735,13 @@ export function IncidentsView() {
       }
       const event = historyEventPayload(parsed.event);
       if (!event) return;
+      const groupId = event.groupId ?? accountsById.get(event.accountId)?.groupId;
       setFilters({
         ...DEFAULT_FILTERS,
         dateRange: selectionDateRange(event.ts),
         provider: event.provider,
         account: event.accountId,
-        group: event.groupId ?? ALL,
+        group: groupId ?? ALL,
         severity: event.severity,
         kind: event.type === "incident" ? "incident" : event.type === "alert" ? "signal" : "all",
       });
@@ -1751,12 +1756,8 @@ export function IncidentsView() {
     } catch {
       // Ignore stale retained-event incident creation payloads.
     }
-  }, [setFilters]);
+  }, [accountsById, setFilters]);
 
-  const accounts = accountsQuery.data ?? [];
-  const groups = groupsQuery.data ?? [];
-  const accountsById = useMemo(() => accountMap(accounts), [accounts]);
-  const groupsById = useMemo(() => groupMap(groups), [groups]);
   const services = snapshotQuery.data?.services ?? [];
   const serviceMetadataById = useMemo(() => new Map((serviceMetadataQuery.data ?? []).map((metadata) => [metadata.serviceId, metadata])), [serviceMetadataQuery.data]);
   const metadataForAccount = (accountId: string | undefined): ServiceMetadata | undefined => {

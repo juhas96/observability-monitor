@@ -32,7 +32,7 @@ import { useProviders } from "./hooks/use-providers";
 import { useRuleMutations, useRuleStates, useRules } from "./hooks/use-rules";
 import { useServiceMetadata } from "./hooks/use-service-metadata";
 import { downloadCsv } from "./utils/csv";
-import type { AlertRule, AlertRuleInput, ChannelView, CheckSeries, HistoryEvent, HistoryEventType, HistorySample, HttpCheck, ObservabilitySeverity, Provider, ProviderInfo, RuleMetric, RuleOperator, RulePreview, RuleScope, RuleState, ServiceHealth, ServiceMetadata, ServiceTier } from "./types";
+import type { Account, AlertRule, AlertRuleInput, ChannelView, CheckSeries, HistoryEvent, HistoryEventType, HistorySample, HttpCheck, ObservabilitySeverity, Provider, ProviderInfo, RuleMetric, RuleOperator, RulePreview, RuleScope, RuleState, ServiceHealth, ServiceMetadata, ServiceTier } from "./types";
 
 type ScopeType = "all" | "group" | "account" | "provider" | "check";
 type RuleHealthStatus = "ok" | "firing" | "pending" | "nodata" | "disabled" | "suppressed" | "missingTarget" | "noisy" | "delivery";
@@ -316,18 +316,22 @@ function simulateSampleRule(
   };
 }
 
-function sampleAccountMatchesRule(rule: AlertRule, accountId: string, row: HistorySample["perAccount"][string]): boolean {
+function sampleAccountGroupId(accountId: string, row: HistorySample["perAccount"][string], accountsById: Map<string, Account>): string | undefined {
+  return row.groupId ?? accountsById.get(accountId)?.groupId;
+}
+
+function sampleAccountMatchesRule(rule: AlertRule, accountId: string, row: HistorySample["perAccount"][string], accountsById: Map<string, Account>): boolean {
   if (rule.scope.accountId && accountId !== rule.scope.accountId) return false;
-  if (rule.scope.groupId && row.groupId !== rule.scope.groupId) return false;
+  if (rule.scope.groupId && sampleAccountGroupId(accountId, row, accountsById) !== rule.scope.groupId) return false;
   if (rule.scope.provider && row.provider !== rule.scope.provider) return false;
   return true;
 }
 
-function simulateRuleFromSamples(rule: AlertRule, samples: HistorySample[]): RuleHistorySimulation | null {
+function simulateRuleFromSamples(rule: AlertRule, samples: HistorySample[], accountsById: Map<string, Account>): RuleHistorySimulation | null {
   if (rule.metric !== "failureRate" && rule.metric !== "openIncidents") return null;
   const values = samples
     .map((sample) => {
-      const scopedRows = Object.entries(sample.perAccount).filter(([accountId, row]) => sampleAccountMatchesRule(rule, accountId, row));
+      const scopedRows = Object.entries(sample.perAccount).filter(([accountId, row]) => sampleAccountMatchesRule(rule, accountId, row, accountsById));
       if (scopedRows.length === 0) return null;
       if (rule.metric === "failureRate") {
         const counts = scopedRows.reduce((acc, [, row]) => {
@@ -1257,6 +1261,7 @@ export function AlertsView() {
 
   const groupNames = useMemo(() => new Map((groupsQuery.data ?? []).map((g) => [g.id, g.name])), [groupsQuery.data]);
   const accountNames = useMemo(() => new Map((accountsQuery.data ?? []).map((a) => [a.id, a.label])), [accountsQuery.data]);
+  const accountsById = useMemo(() => new Map((accountsQuery.data ?? []).map((account) => [account.id, account])), [accountsQuery.data]);
   const checkNames = useMemo(() => new Map((checksQuery.data ?? []).map((c) => [c.id, c.name])), [checksQuery.data]);
   const ruleHealthById = useMemo(() => {
     const map = new Map<string, RuleHealth>();
@@ -1276,11 +1281,11 @@ export function AlertsView() {
   const ruleHistoryById = useMemo(() => {
     const map = new Map<string, RuleHistorySimulation>();
     for (const rule of rulesQuery.data ?? []) {
-      const simulation = simulateRuleFromSamples(rule, ruleHistoryQuery.data ?? []);
+      const simulation = simulateRuleFromSamples(rule, ruleHistoryQuery.data ?? [], accountsById);
       if (simulation) map.set(rule.id, simulation);
     }
     return map;
-  }, [ruleHistoryQuery.data, rulesQuery.data]);
+  }, [accountsById, ruleHistoryQuery.data, rulesQuery.data]);
   const services = snapshotQuery.data?.services ?? [];
   const serviceMetadataById = useMemo(() => new Map((serviceMetadataQuery.data ?? []).map((metadata) => [metadata.serviceId, metadata])), [serviceMetadataQuery.data]);
 

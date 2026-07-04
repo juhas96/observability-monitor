@@ -8,13 +8,14 @@ Multi Monitor connects many accounts across GitHub Actions, Cloudflare, Supabase
 
 The main app includes:
 
-- grouped live account dashboard with retained history activity
+- Command Center at `/` for current issues, SLO risk, alert-rule evidence, notification suppression, and scoped handoffs
+- detailed grouped live account dashboard at `/dashboard` with retained history activity
 - Apps cockpit with local service ownership metadata, runbooks, dependencies, and health contributors
 - Custom Dashboards at `/dashboards` with Recharts panels, templates, local normalized data panels, provider-declared live query panels, row links, row search/sort, and CSV export
 - Insights, Timeline, Incidents, Uptime checks, Alert Rules, Accounts diagnostics, portable setup import/export, and notification channel settings
 - persisted per-tab filters and saved filter presets for data-heavy views
 
-The old dedicated Grafana tab has been replaced by Custom Dashboards. Grafana account config and saved Loki/Tempo presets are preserved and migrated into dashboard panels when dashboards are first loaded.
+The old dedicated Grafana tab and `/grafana` route have been replaced by Custom Dashboards. Grafana account config and saved Loki/Tempo presets are preserved and migrated into dashboard panels when dashboards are first loaded.
 
 ## Developer Prerequisites
 

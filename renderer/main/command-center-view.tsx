@@ -114,6 +114,14 @@ function maintenanceScopeLabel(window: MaintenanceWindow, accountsById: Map<stri
   return "All notifications";
 }
 
+function ruleScopeLabel(rule: AlertRule, accountsById: Map<string, Account>, checksById: Map<string, HttpCheck>): string {
+  if (rule.scope.accountId) return accountsById.get(rule.scope.accountId)?.label ?? `Account ${rule.scope.accountId}`;
+  if (rule.scope.checkId) return checksById.get(rule.scope.checkId)?.name ?? `Check ${rule.scope.checkId}`;
+  if (rule.scope.provider) return providerLabel(rule.scope.provider);
+  if (rule.scope.groupId) return `Group ${rule.scope.groupId}`;
+  return "All monitored providers";
+}
+
 function openExternal(url: string) {
   void monitorApi.openExternal(url).catch((error) => toast.error(error instanceof Error ? error.message : String(error)));
 }
@@ -352,11 +360,7 @@ function DownCheckRow({ check, onSelect }: { check: HttpCheckResult; onSelect: (
   );
 }
 
-function AlertRuleRow({ rule, state, account, onSelect }: { rule: AlertRule; state?: RuleState; account?: Account; onSelect: () => void }) {
-  const scopeLabel = account?.label
-    ?? (rule.scope.provider ? providerLabel(rule.scope.provider) : undefined)
-    ?? (rule.scope.groupId ? `Group ${rule.scope.groupId}` : undefined)
-    ?? (rule.scope.checkId ? `Check ${rule.scope.checkId}` : "All monitored providers");
+function AlertRuleRow({ rule, state, scopeLabel, onSelect }: { rule: AlertRule; state?: RuleState; scopeLabel: string; onSelect: () => void }) {
   return (
     <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left first:border-t-0" onClick={onSelect}>
       <BellPlus className="size-4 text-red-500" />
@@ -400,20 +404,25 @@ function SloRiskRow({ status, account, onSelect }: { status: SloStatus; account?
 function SuppressionStatus({
   mutedUntil,
   activeWindows,
+  activeRuleSnoozes,
   accountsById,
   checksById,
   loading,
   onOpenSettings,
+  onOpenRule,
 }: {
   mutedUntil?: string;
   activeWindows: MaintenanceWindow[];
+  activeRuleSnoozes: AlertRule[];
   accountsById: Map<string, Account>;
   checksById: Map<string, HttpCheck>;
   loading: boolean;
   onOpenSettings: () => void;
+  onOpenRule: (ruleId: string) => void;
 }) {
   const mutedActive = mutedUntil ? new Date(mutedUntil).getTime() > Date.now() : false;
-  const suppressed = mutedActive || activeWindows.length > 0;
+  const suppressed = mutedActive || activeWindows.length > 0 || activeRuleSnoozes.length > 0;
+  const visibleRuleSnoozes = activeRuleSnoozes.slice(0, 4);
   return (
     <section className="rounded-lg border border-separator bg-background/60 p-4">
       <div className="mb-2 flex items-center justify-between gap-3">
@@ -446,6 +455,23 @@ function SuppressionStatus({
               </span>
             </div>
           ))}
+          {visibleRuleSnoozes.map((rule) => (
+            <button key={rule.id} className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 rounded-md border border-separator bg-control-subtle p-2 text-left" onClick={() => onOpenRule(rule.id)}>
+              <BellPlus className="mt-0.5 size-4 shrink-0 text-yellow-500" />
+              <span className="min-w-0">
+                <Text variant="small" className="block truncate">{rule.name}</Text>
+                <Text variant="small" color="tertiary" className="block truncate">
+                  Rule snoozed until {new Date(rule.mutedUntil as string).toLocaleString()} · {ruleScopeLabel(rule, accountsById, checksById)}
+                </Text>
+              </span>
+              <Badge color="secondary">Open</Badge>
+            </button>
+          ))}
+          {activeRuleSnoozes.length > visibleRuleSnoozes.length ? (
+            <Text variant="small" color="tertiary" className="block px-1">
+              Showing {visibleRuleSnoozes.length} of {activeRuleSnoozes.length} snoozed alert rules.
+            </Text>
+          ) : null}
         </div>
       )}
       <Button variant="transparent" size="small" className="mt-3" onClick={onOpenSettings}>
@@ -496,9 +522,11 @@ export function CommandCenterView() {
   const visibleAttentionAccounts = allAttentionAccounts.slice(0, 6);
   const ruleStates = ruleStatesQuery.data ?? [];
   const ruleStatesById = new Map(ruleStates.map((state) => [state.ruleId, state]));
+  const allRules = rulesQuery.data ?? [];
   const firingRuleIds = new Set(ruleStates.filter((state) => state.firing).map((state) => state.ruleId));
-  const allFiringRules = (rulesQuery.data ?? []).filter((rule) => firingRuleIds.has(rule.id));
+  const allFiringRules = allRules.filter((rule) => firingRuleIds.has(rule.id));
   const visibleFiringRules = allFiringRules.slice(0, 5);
+  const activeRuleSnoozes = allRules.filter((rule) => rule.mutedUntil && new Date(rule.mutedUntil).getTime() > Date.now());
   const allSloStatuses = sloStatusQuery.data ?? [];
   const allAtRiskSlos = allSloStatuses.filter((status) => status.atRisk);
   const visibleAtRiskSlos = allAtRiskSlos.slice(0, 5);
@@ -548,9 +576,10 @@ export function CommandCenterView() {
     void navigate({ to: "/uptime" });
   };
   const openTimelineEvent = (event: HistoryEvent) => {
+    const groupId = event.groupId ?? accountsById.get(event.accountId)?.groupId;
     localStorage.setItem(TIMELINE_DRILLDOWN_KEY, JSON.stringify({
       dateRange: drilldownDateRange(event.ts),
-      group: event.groupId ?? "all",
+      group: groupId ?? "all",
       provider: event.provider,
       account: event.accountId,
       type: event.type,
@@ -842,10 +871,12 @@ export function CommandCenterView() {
             <SuppressionStatus
               mutedUntil={settings?.mutedUntil}
               activeWindows={activeMaintenanceWindows}
+              activeRuleSnoozes={activeRuleSnoozes}
               accountsById={accountsById}
               checksById={checksById}
-              loading={settingsQuery.isLoading}
+              loading={settingsQuery.isLoading || rulesQuery.isLoading}
               onOpenSettings={openSettings}
+              onOpenRule={openAlertRule}
             />
 
             <section className="rounded-lg border border-separator bg-background/60 p-4">
@@ -920,7 +951,7 @@ export function CommandCenterView() {
                       key={rule.id}
                       rule={rule}
                       state={ruleStatesById.get(rule.id)}
-                      account={rule.scope.accountId ? accountsById.get(rule.scope.accountId) : undefined}
+                      scopeLabel={ruleScopeLabel(rule, accountsById, checksById)}
                       onSelect={() => openAlertRule(rule.id)}
                     />
                   ))}

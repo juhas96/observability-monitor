@@ -1045,7 +1045,11 @@ export function AccountsView() {
             actions={<Button variant="accent" onClick={openAdd}>Add account</Button>}
           />
         ) : filteredAccounts.length === 0 ? (
-          <EmptyState title="No accounts match filters" description="Adjust or reset filters to show more accounts." />
+          <EmptyState title="No accounts match filters" description="Adjust or reset filters to show more accounts.">
+            <Button variant="glass" size="small" onClick={resetFilters}>
+              Reset filters
+            </Button>
+          </EmptyState>
         ) : (
           <List.Root items={filteredAccounts} getItemKey={(a) => a.id}>
             {filteredAccounts.map((account) => (

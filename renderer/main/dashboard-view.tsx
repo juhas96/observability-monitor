@@ -109,6 +109,13 @@ function metadataForEvent(event: HistoryEvent, accountsById: Map<string, Account
   return metadataByService.get(service?.id ?? event.groupId ?? account?.groupId ?? (event.accountId ? `account:${event.accountId}` : ""));
 }
 
+function matchesEventGroup(event: HistoryEvent, account: Account | undefined, groupsById: Map<string, ProjectGroup>, filter: string): boolean {
+  if (filter === ALL_GROUPS) return true;
+  const groupId = event.groupId ?? account?.groupId;
+  if (filter === UNGROUPED) return !groupId || !groupsById.has(groupId);
+  return groupId === filter;
+}
+
 function matchesServiceMetadata(metadata: ServiceMetadata | undefined, filters: Pick<DashboardFilters, "owner" | "tier" | "dependency">): boolean {
   if (filters.owner !== ALL && metadata?.owner !== filters.owner) return false;
   if (filters.tier !== "all" && metadata?.tier !== filters.tier) return false;
@@ -429,7 +436,7 @@ export function DashboardView() {
   };
   const eventQuery = useHistoryEvents({
     range: filters.dateRange,
-    groupId: filters.group === ALL_GROUPS || filters.group === UNGROUPED ? undefined : filters.group,
+    groupId: undefined,
     accountId: filters.account === ALL ? undefined : filters.account,
     provider: filters.provider === "all" ? undefined : filters.provider,
     status: filters.status === "all" ? undefined : filters.status,
@@ -456,7 +463,8 @@ export function DashboardView() {
   );
 
   const activityEvents = (eventQuery.data ?? []).filter((event) => {
-    if (filters.group === UNGROUPED && event.groupId) return false;
+    const account = accountsById.get(event.accountId);
+    if (!matchesEventGroup(event, account, groupsById, filters.group)) return false;
     if (!matchesServiceMetadata(metadataForEvent(event, accountsById, services, metadataByService), filters)) return false;
     return true;
   });
