@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { monitorApi, onNotification } from "../ipc";
-import type { AggregateSnapshot, HistoryRange, HttpCheckInput } from "../types";
+import type { AggregateSnapshot, HistoryDateRange, HistoryRange, HttpCheckInput } from "../types";
 
 const CHECKS_KEY = ["checks"] as const;
 
@@ -36,11 +36,14 @@ export function useCheckMutations() {
   return { save, remove };
 }
 
-export function useCheckLatency(checkId: string, range: HistoryRange) {
+export function useCheckLatency(checkId: string, range: HistoryRange | HistoryDateRange) {
   const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: [...CHECKS_KEY, "latency", checkId, range],
-    queryFn: () => monitorApi.getCheckLatencySeries({ checkId, range }),
+    queryFn: () => typeof range === "string"
+      ? monitorApi.getCheckLatencySeries({ checkId, range })
+      : monitorApi.getCheckLatencySeries({ checkId, dateRange: range }),
+    enabled: checkId.trim() !== "",
   });
 
   useEffect(() => {

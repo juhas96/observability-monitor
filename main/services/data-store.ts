@@ -45,4 +45,14 @@ export class DataStore<T> {
     const filePath = await this.getFilePath();
     await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf-8");
   }
+
+  async sizeBytes(): Promise<number> {
+    try {
+      const filePath = await this.getFilePath();
+      const stat = await fs.stat(filePath);
+      return stat.size;
+    } catch {
+      return 0;
+    }
+  }
 }

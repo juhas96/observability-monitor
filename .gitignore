@@ -1,5 +1,6 @@
 # Dependencies
 node_modules/
+.build/
 
 # App icons (binary, auto-generated)
 app-icon.*

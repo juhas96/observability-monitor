@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Copy, ExternalLink, Search } from "lucide-react";
-import { Button, Callout, Dialog, Input, Text, toast } from "@glaze/core/components";
+import { Button, Callout, Dialog, Input, Switch, Text, toast } from "@glaze/core/components";
 
 import { monitorApi } from "../ipc";
 import type { MonitorItem, MonitorLogLine, MonitorLogResponse } from "../types";
@@ -29,16 +29,20 @@ export function LogViewerDialog({
 }) {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<MonitorLogResponse | null>(null);
+  const [live, setLive] = useState(false);
 
   useEffect(() => {
     if (!open || !item) return;
     let cancelled = false;
     setQuery("");
     setLoading(true);
+    setRefreshing(false);
     setError(null);
     setResponse(null);
+    setLive(false);
     monitorApi.getItemLogs(item.uid)
       .then((logs) => {
         if (!cancelled) setResponse(logs);
@@ -53,6 +57,35 @@ export function LogViewerDialog({
       cancelled = true;
     };
   }, [item, open]);
+
+  const liveSupported = Boolean(item?.liveLogAvailable && item.logAvailable);
+  const livePollMs = Math.max(3000, (item?.liveLogPollSeconds ?? 5) * 1000);
+
+  useEffect(() => {
+    if (!open || !item || !liveSupported || !live) return;
+    let cancelled = false;
+    const refresh = () => {
+      setRefreshing(true);
+      monitorApi.getItemLogs(item.uid)
+        .then((logs) => {
+          if (!cancelled) {
+            setResponse(logs);
+            setError(null);
+          }
+        })
+        .catch((err) => {
+          if (!cancelled) setError(`Live refresh failed: ${err instanceof Error ? err.message : String(err)}`);
+        })
+        .finally(() => {
+          if (!cancelled) setRefreshing(false);
+        });
+    };
+    const timer = window.setInterval(refresh, livePollMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [item, live, livePollMs, liveSupported, open]);
 
   const visibleLines = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -106,12 +139,22 @@ export function LogViewerDialog({
               Open
             </Button>
           ) : null}
+          {liveSupported ? (
+            <div className="flex items-center gap-2 shrink-0">
+              <Switch checked={live} onCheckedChange={setLive} />
+              <Text variant="small" color={live ? "primary" : "secondary"}>
+                {refreshing ? "Refreshing" : item?.liveLogLabel ?? "Live"}
+              </Text>
+            </div>
+          ) : null}
         </div>
 
-        {loading ? (
+        {error ? <Callout color="red">{error}</Callout> : null}
+
+        {loading && !response ? (
           <Callout color="secondary">Fetching logs…</Callout>
-        ) : error ? (
-          <Callout color="red">{error}</Callout>
+        ) : error && !response ? (
+          null
         ) : response && response.lines.length === 0 ? (
           <Callout color="secondary">No logs were returned.</Callout>
         ) : response && visibleLines.length === 0 ? (

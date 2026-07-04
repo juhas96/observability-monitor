@@ -24,6 +24,7 @@ import {
   Gauge,
   Hexagon,
   GitPullRequest,
+  Logs,
   type LucideIcon,
 } from "lucide-react";
 import type { MonitorCategory, Provider } from "../types";
@@ -42,6 +43,7 @@ const PROVIDER_ICONS: Record<Provider, LucideIcon> = {
   datadog: Gauge,
   honeycomb: Hexagon,
   posthog: Bug,
+  betterstack: Logs,
 };
 
 const PROVIDER_LABELS: Record<Provider, string> = {
@@ -58,6 +60,7 @@ const PROVIDER_LABELS: Record<Provider, string> = {
   datadog: "Datadog",
   honeycomb: "Honeycomb",
   posthog: "PostHog",
+  betterstack: "Better Stack",
 };
 
 const CATEGORY_ICONS: Partial<Record<MonitorCategory, LucideIcon>> = {

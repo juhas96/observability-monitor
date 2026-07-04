@@ -5,20 +5,26 @@
 
 import { DataStore } from "./data-store.js";
 import type { StatusTransition } from "./diff-engine.js";
+import { getSettings } from "./settings-store.js";
+import { DEFAULT_SETTINGS } from "./types.js";
 import type {
   AggregateSnapshot,
   CheckLatencyPoint,
   CheckSeries,
+  HistoryDateRange,
   HistoryEvent,
   HistoryEventType,
   HistoryRange,
   HistorySample,
   HistorySampleAccount,
+  HistoryStats,
   HistoryStatusCounts,
   HttpCheckResult,
+  MonitorCategory,
   MonitorItem,
   NormalizedStatus,
   ObservabilitySeverity,
+  Provider,
   SloDefinition,
   SloStatus,
 } from "./types.js";
@@ -41,10 +47,11 @@ interface HistoryData {
 const DEFAULT_DATA: HistoryData = { version: 1, samples: [], events: [], slos: [], checkSamples: [] };
 const store = new DataStore<HistoryData>("history.json", DEFAULT_DATA);
 
-const RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
-const MAX_SAMPLES = 4000;
-const MAX_EVENTS = 2000;
-const MAX_CHECK_SAMPLES = 5000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_RETENTION_MS = DEFAULT_SETTINGS.historyRetentionDays * DAY_MS;
+const MIN_SAMPLE_CAP = 4000;
+const MIN_EVENT_CAP = 2000;
+const MIN_CHECK_SAMPLE_CAP = 5000;
 const MAX_SERIES_POINTS = 180;
 
 const STATUS_ORDER: NormalizedStatus[] = [
@@ -80,8 +87,43 @@ function emptyCounts(): HistoryStatusCounts {
   };
 }
 
-function rangeStart(range: HistoryRange, nowMs = Date.now()): number {
-  return nowMs - RANGE_MS[range];
+async function currentRetentionDays(): Promise<number> {
+  try {
+    return Math.max(1, Math.round((await getSettings()).historyRetentionDays));
+  } catch {
+    return DEFAULT_SETTINGS.historyRetentionDays;
+  }
+}
+
+async function currentRetentionMs(): Promise<number> {
+  return (await currentRetentionDays()) * DAY_MS;
+}
+
+function retentionCaps(retentionMs: number): { samples: number; events: number; checkSamples: number } {
+  const days = Math.max(1, Math.ceil(retentionMs / DAY_MS));
+  return {
+    samples: Math.max(MIN_SAMPLE_CAP, days * 24 * 60 * 2),
+    events: Math.max(MIN_EVENT_CAP, days * 1000),
+    checkSamples: Math.max(MIN_CHECK_SAMPLE_CAP, days * 24 * 60 * 4),
+  };
+}
+
+function dateWindow(range: HistoryRange | HistoryDateRange, nowMs = Date.now(), retentionMs = DEFAULT_RETENTION_MS): { start: number; end: number; bucketMs: number } {
+  if (typeof range === "string") {
+    const duration = RANGE_MS[range];
+    return { start: nowMs - duration, end: nowMs, bucketMs: Math.max(60 * 1000, Math.ceil(duration / MAX_SERIES_POINTS)) };
+  }
+  if (range.mode === "relative") {
+    const duration = RANGE_MS[normalizeRange(range.range)];
+    return { start: nowMs - duration, end: nowMs, bucketMs: Math.max(60 * 1000, Math.ceil(duration / MAX_SERIES_POINTS)) };
+  }
+  const retentionStart = nowMs - retentionMs;
+  const parsedFrom = range.from ? new Date(range.from).getTime() : NaN;
+  const parsedTo = range.to ? new Date(range.to).getTime() : NaN;
+  const start = Math.max(Number.isFinite(parsedFrom) ? parsedFrom : nowMs - RANGE_MS["24h"], retentionStart);
+  const end = Math.min(Number.isFinite(parsedTo) ? parsedTo : nowMs, nowMs);
+  const duration = Math.max(60 * 1000, end - start);
+  return { start, end, bucketMs: Math.max(60 * 1000, Math.ceil(duration / MAX_SERIES_POINTS)) };
 }
 
 function normalizeRange(value: unknown): HistoryRange {
@@ -136,14 +178,29 @@ function groupIdsByAccount(snapshot: AggregateSnapshot): Map<string, string | un
 function sampleFromSnapshot(snapshot: AggregateSnapshot): HistorySample {
   const groups = groupIdsByAccount(snapshot);
   const perAccount = new Map<string, HistorySampleAccount>();
-  for (const item of snapshot.items) {
-    const current = perAccount.get(item.accountId) ?? {
-      provider: item.provider,
-      groupId: groups.get(item.accountId),
+  const ensureAccount = (accountId: string, provider: Provider): HistorySampleAccount => {
+    const current = perAccount.get(accountId) ?? {
+      provider,
+      groupId: groups.get(accountId),
       counts: emptyCounts(),
+      openIncidentCount: 0,
+      alertCount: 0,
     };
+    perAccount.set(accountId, current);
+    return current;
+  };
+
+  for (const item of snapshot.items) {
+    const current = ensureAccount(item.accountId, item.provider);
     current.counts[item.status] += 1;
-    perAccount.set(item.accountId, current);
+  }
+  for (const incident of snapshot.incidents) {
+    if (incident.status === "resolved") continue;
+    ensureAccount(incident.accountId, incident.provider).openIncidentCount = (perAccount.get(incident.accountId)?.openIncidentCount ?? 0) + 1;
+  }
+  for (const signal of snapshot.signals) {
+    if (signal.kind !== "alert") continue;
+    ensureAccount(signal.accountId, signal.provider).alertCount = (perAccount.get(signal.accountId)?.alertCount ?? 0) + 1;
   }
 
   const perService: Record<string, NormalizedStatus> = {};
@@ -174,6 +231,7 @@ function itemEvent(type: HistoryEventType, item: MonitorItem, groupId: string | 
     accountId: item.accountId,
     groupId,
     sourceUid: item.uid,
+    category: item.category,
     title: item.title,
     status: item.status,
     severity: severityForStatus(item.status),
@@ -207,6 +265,7 @@ function eventsFromSnapshot(snapshot: AggregateSnapshot, transitions: StatusTran
       accountId: signal.accountId,
       groupId: groups.get(signal.accountId),
       sourceUid: signal.sourceItemUid ?? signal.uid,
+      category: signal.category,
       title: signal.title,
       status: signal.status,
       severity: signal.severity,
@@ -223,6 +282,7 @@ function eventsFromSnapshot(snapshot: AggregateSnapshot, transitions: StatusTran
       accountId: incident.accountId,
       groupId: groups.get(incident.accountId),
       sourceUid: incident.sourceItemUid ?? incident.uid,
+      category: "incident",
       title: incident.title,
       status: incident.status,
       severity: incident.severity,
@@ -233,20 +293,21 @@ function eventsFromSnapshot(snapshot: AggregateSnapshot, transitions: StatusTran
   return events;
 }
 
-function prune(data: HistoryData, nowMs = Date.now()): HistoryData {
-  const oldest = nowMs - RETENTION_MS;
+function prune(data: HistoryData, nowMs = Date.now(), retentionMs = DEFAULT_RETENTION_MS): HistoryData {
+  const oldest = nowMs - retentionMs;
+  const caps = retentionCaps(retentionMs);
   const samples = data.samples
     .filter((sample) => new Date(sample.ts).getTime() >= oldest)
     .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
-    .slice(-MAX_SAMPLES);
+    .slice(-caps.samples);
   const events = data.events
     .filter((event) => new Date(event.ts).getTime() >= oldest)
     .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
-    .slice(-MAX_EVENTS);
+    .slice(-caps.events);
   const checkSamples = (data.checkSamples ?? [])
     .filter((sample) => new Date(sample.ts).getTime() >= oldest)
     .sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime())
-    .slice(-MAX_CHECK_SAMPLES);
+    .slice(-caps.checkSamples);
   return { ...data, samples, events, checkSamples };
 }
 
@@ -275,9 +336,67 @@ function collapseSamples(samples: HistorySample[], bucketMs: number): HistorySam
   }).sort((a, b) => new Date(a.ts).getTime() - new Date(b.ts).getTime());
 }
 
-function filteredSamples(data: HistoryData, range: HistoryRange): HistorySample[] {
-  const start = rangeStart(range);
-  return data.samples.filter((sample) => new Date(sample.ts).getTime() >= start);
+function filteredSamples(data: HistoryData, range: HistoryRange | HistoryDateRange, retentionMs = DEFAULT_RETENTION_MS): HistorySample[] {
+  const { start, end } = dateWindow(range, Date.now(), retentionMs);
+  return data.samples.filter((sample) => {
+    const ts = new Date(sample.ts).getTime();
+    return ts >= start && ts <= end;
+  });
+}
+
+function accountStatus(row: HistorySampleAccount): NormalizedStatus {
+  const statuses = Object.entries(row.counts)
+    .filter(([, count]) => count > 0)
+    .map(([status]) => status as NormalizedStatus);
+  if ((row.openIncidentCount ?? 0) > 0) statuses.push("failure");
+  if ((row.alertCount ?? 0) > 0) statuses.push("warning");
+  return worstStatus(statuses);
+}
+
+function scopeSample(
+  sample: HistorySample,
+  filters: { groupId?: string; accountId?: string; provider?: string },
+): HistorySample | null {
+  if (!filters.groupId && !filters.accountId && !filters.provider) return sample;
+
+  const perAccount = Object.fromEntries(
+    Object.entries(sample.perAccount).filter(([accountId, row]) => {
+      if (filters.accountId && accountId !== filters.accountId) return false;
+      if (filters.groupId && row.groupId !== filters.groupId) return false;
+      if (filters.provider && row.provider !== filters.provider) return false;
+      return true;
+    }),
+  );
+  const rows = Object.values(perAccount);
+  if (rows.length === 0) return null;
+
+  const successCount = rows.reduce((sum, row) => sum + row.counts.success, 0);
+  const failureCount = rows.reduce((sum, row) => sum + row.counts.failure, 0);
+  const openIncidentCount = rows.reduce((sum, row) => sum + (row.openIncidentCount ?? 0), 0);
+  const alertCount = rows.reduce((sum, row) => sum + (row.alertCount ?? 0), 0);
+
+  return {
+    ...sample,
+    aggregateStatus: worstStatus(rows.map(accountStatus)),
+    perAccount,
+    perService: {},
+    openIncidentCount,
+    alertCount,
+    failureCount,
+    successCount,
+  };
+}
+
+function validTime(value: string): number {
+  const ts = new Date(value).getTime();
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+function retainedRows<T extends { ts: string }>(rows: T[], retentionMs: number): T[] {
+  const oldest = Date.now() - retentionMs;
+  return rows
+    .filter((row) => validTime(row.ts) >= oldest)
+    .sort((a, b) => validTime(a.ts) - validTime(b.ts));
 }
 
 function sampleMatchesScope(sample: HistorySample, slo: SloDefinition): boolean {
@@ -359,12 +478,28 @@ export function historyRange(value: unknown): HistoryRange {
   return normalizeRange(value);
 }
 
+export function historyDateRange(value: unknown): HistoryRange | HistoryDateRange {
+  if (typeof value === "string") return normalizeRange(value);
+  if (typeof value !== "object" || value === null) return "24h";
+  const candidate = value as Partial<HistoryDateRange>;
+  if (candidate.mode === "custom") {
+    return {
+      mode: "custom",
+      from: typeof candidate.from === "string" ? candidate.from : undefined,
+      to: typeof candidate.to === "string" ? candidate.to : undefined,
+    };
+  }
+  if (candidate.mode === "relative") return { mode: "relative", range: normalizeRange(candidate.range) };
+  return "24h";
+}
+
 export async function record(
   snapshot: AggregateSnapshot,
   transitions: StatusTransition[],
   checkResults: HttpCheckResult[] = [],
 ): Promise<void> {
-  const data = prune(await store.load());
+  const retentionMs = await currentRetentionMs();
+  const data = prune(await store.load(), Date.now(), retentionMs);
   const sample = sampleFromSnapshot(snapshot);
   const eventMap = new Map(data.events.map((event) => [event.id, event]));
   for (const event of eventsFromSnapshot(snapshot, transitions)) eventMap.set(event.id, event);
@@ -380,25 +515,29 @@ export async function record(
       samples: [...data.samples, sample],
       events: [...eventMap.values()],
       checkSamples: [...data.checkSamples, ...checkRows],
-    }),
+    }, Date.now(), retentionMs),
   );
 }
 
 /** Append a single discrete event (e.g. a fired alerting rule), deduped by id. */
 export async function appendEvent(event: HistoryEvent): Promise<void> {
-  const data = prune(await store.load());
+  const retentionMs = await currentRetentionMs();
+  const data = prune(await store.load(), Date.now(), retentionMs);
   const eventMap = new Map(data.events.map((existing) => [existing.id, existing]));
   eventMap.set(event.id, event);
-  await store.save(prune({ ...data, events: [...eventMap.values()] }));
+  await store.save(prune({ ...data, events: [...eventMap.values()] }, Date.now(), retentionMs));
 }
 
-export async function getCheckLatencySeries(checkId: string, range: HistoryRange): Promise<CheckSeries> {
+export async function getCheckLatencySeries(checkId: string, range: HistoryRange | HistoryDateRange): Promise<CheckSeries> {
   const data = await store.load();
-  const start = rangeStart(range);
-  const rows = (data.checkSamples ?? []).filter((row) => row.checkId === checkId && new Date(row.ts).getTime() >= start);
+  const retentionMs = await currentRetentionMs();
+  const { start, end, bucketMs } = dateWindow(range, Date.now(), retentionMs);
+  const rows = (data.checkSamples ?? []).filter((row) => {
+    const ts = new Date(row.ts).getTime();
+    return row.checkId === checkId && ts >= start && ts <= end;
+  });
   if (rows.length === 0) return { points: [], uptime: null, avgLatencyMs: null };
 
-  const bucketMs = Math.max(60 * 1000, Math.ceil(RANGE_MS[range] / MAX_SERIES_POINTS));
   const buckets = new Map<number, { latencies: number[]; ok: boolean }>();
   for (const row of rows) {
     const bucket = Math.floor(new Date(row.ts).getTime() / bucketMs) * bucketMs;
@@ -422,35 +561,97 @@ export async function getCheckLatencySeries(checkId: string, range: HistoryRange
   return { points, uptime: okCount / rows.length, avgLatencyMs };
 }
 
-export async function getSeries(range: HistoryRange): Promise<HistorySample[]> {
+export async function getSeries(
+  range: HistoryRange | HistoryDateRange,
+  filters: { groupId?: string; accountId?: string; provider?: string } = {},
+): Promise<HistorySample[]> {
   const data = await store.load();
-  const samples = filteredSamples(data, range);
-  const bucketMs = Math.max(60 * 1000, Math.ceil(RANGE_MS[range] / MAX_SERIES_POINTS));
+  const retentionMs = await currentRetentionMs();
+  const samples = filteredSamples(data, range, retentionMs)
+    .map((sample) => scopeSample(sample, filters))
+    .filter((sample): sample is HistorySample => sample !== null);
+  const { bucketMs } = dateWindow(range, Date.now(), retentionMs);
   return collapseSamples(samples, bucketMs);
 }
 
+function typeCategory(type: HistoryEventType): MonitorCategory {
+  if (type === "deploy") return "deploy";
+  if (type === "alert") return "alert";
+  if (type === "incident") return "incident";
+  if (type === "check") return "monitor";
+  return "other";
+}
+
 export async function getEvents(filters: {
-  range: HistoryRange;
+  range: HistoryRange | HistoryDateRange;
   groupId?: string;
+  accountId?: string;
   provider?: string;
+  status?: string;
+  severity?: string;
+  category?: string;
   types?: HistoryEventType[];
 }): Promise<HistoryEvent[]> {
   const data = await store.load();
-  const start = rangeStart(filters.range);
+  const retentionMs = await currentRetentionMs();
+  const { start, end } = dateWindow(filters.range, Date.now(), retentionMs);
   return data.events
-    .filter((event) => new Date(event.ts).getTime() >= start)
+    .filter((event) => {
+      const ts = new Date(event.ts).getTime();
+      return ts >= start && ts <= end;
+    })
     .filter((event) => !filters.groupId || event.groupId === filters.groupId)
+    .filter((event) => !filters.accountId || event.accountId === filters.accountId)
     .filter((event) => !filters.provider || event.provider === filters.provider)
+    .filter((event) => !filters.status || event.status === filters.status)
+    .filter((event) => !filters.severity || event.severity === filters.severity)
+    .filter((event) => !filters.category || (event.category ?? typeCategory(event.type)) === filters.category)
     .filter((event) => !filters.types?.length || filters.types.includes(event.type))
     .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime());
 }
 
 export async function getAllSamples(): Promise<HistorySample[]> {
-  return (await store.load()).samples;
+  const retentionMs = await currentRetentionMs();
+  return retainedRows((await store.load()).samples, retentionMs);
 }
 
 export async function getAllEvents(): Promise<HistoryEvent[]> {
-  return (await store.load()).events;
+  const retentionMs = await currentRetentionMs();
+  return retainedRows((await store.load()).events, retentionMs);
+}
+
+export async function getStats(): Promise<HistoryStats> {
+  const [data, retentionDays, storageBytes] = await Promise.all([store.load(), currentRetentionDays(), store.sizeBytes()]);
+  const retentionMs = retentionDays * DAY_MS;
+  const samples = retainedRows(data.samples, retentionMs);
+  const events = retainedRows(data.events, retentionMs);
+  const checkSamples = retainedRows(data.checkSamples ?? [], retentionMs);
+  return {
+    retentionDays,
+    storageBytes,
+    sampleCount: samples.length,
+    eventCount: events.length,
+    checkSampleCount: checkSamples.length,
+    sloCount: data.slos.length,
+    oldestSampleAt: samples[0]?.ts,
+    newestSampleAt: samples[samples.length - 1]?.ts,
+    oldestEventAt: events[0]?.ts,
+    newestEventAt: events[events.length - 1]?.ts,
+    oldestCheckSampleAt: checkSamples[0]?.ts,
+    newestCheckSampleAt: checkSamples[checkSamples.length - 1]?.ts,
+  };
+}
+
+export async function clearRetainedHistory(): Promise<HistoryStats> {
+  const data = await store.load();
+  await store.save({ ...data, samples: [], events: [], checkSamples: [] });
+  return await getStats();
+}
+
+export async function pruneRetainedHistory(): Promise<HistoryStats> {
+  const retentionMs = await currentRetentionMs();
+  await store.save(prune(await store.load(), Date.now(), retentionMs));
+  return await getStats();
 }
 
 export async function listSlos(): Promise<SloDefinition[]> {
@@ -465,6 +666,7 @@ export async function saveSlo(input: {
   windowDays: number;
 }): Promise<SloDefinition> {
   const data = await store.load();
+  const retentionDays = await currentRetentionDays();
   const now = new Date().toISOString();
   const existing = input.id ? data.slos.find((slo) => slo.id === input.id) : undefined;
   const slo: SloDefinition = {
@@ -472,7 +674,7 @@ export async function saveSlo(input: {
     name: input.name,
     scope: input.scope,
     target: Math.min(99.99, Math.max(1, input.target)),
-    windowDays: Math.min(14, Math.max(1, Math.round(input.windowDays))),
+    windowDays: Math.min(retentionDays, Math.max(1, Math.round(input.windowDays))),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   };
@@ -488,9 +690,11 @@ export async function deleteSlo(id: string): Promise<void> {
 
 export async function getSloStatus(): Promise<SloStatus[]> {
   const data = await store.load();
+  const retentionDays = await currentRetentionDays();
   return data.slos.map((slo) => {
-    const start = Date.now() - slo.windowDays * 24 * 60 * 60 * 1000;
+    const effectiveSlo = { ...slo, windowDays: Math.min(slo.windowDays, retentionDays) };
+    const start = Date.now() - effectiveSlo.windowDays * DAY_MS;
     const samples = data.samples.filter((sample) => new Date(sample.ts).getTime() >= start);
-    return sloStatus(slo, samples);
+    return sloStatus(effectiveSlo, samples);
   });
 }

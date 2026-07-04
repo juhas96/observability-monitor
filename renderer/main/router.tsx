@@ -6,19 +6,20 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { DashboardView } from "./dashboard-view";
-import { AccountsView } from "./accounts-view";
-import { AlertsView } from "./alerts-view";
-import { AppsView } from "./apps-view";
-import { GrafanaView } from "./grafana-view";
-import { IncidentsView } from "./incidents-view";
+import { CommandCenterView } from "./command-center-view";
 import { RootView } from "./root-view";
-import { UptimeView } from "./uptime-view";
 import { QueryClient } from "@tanstack/react-query";
 import { ErrorBoundaryView } from "@glaze/core/components";
 
-// Recharts-heavy views are code-split so they leave the main bundle.
+// Secondary data-heavy views are code-split so the main dashboard stays light.
+const AccountsView = React.lazy(() => import("./accounts-view").then((m) => ({ default: m.AccountsView })));
+const AlertsView = React.lazy(() => import("./alerts-view").then((m) => ({ default: m.AlertsView })));
+const AppsView = React.lazy(() => import("./apps-view").then((m) => ({ default: m.AppsView })));
 const InsightsView = React.lazy(() => import("./insights-view").then((m) => ({ default: m.InsightsView })));
+const IncidentsView = React.lazy(() => import("./incidents-view").then((m) => ({ default: m.IncidentsView })));
 const TimelineView = React.lazy(() => import("./timeline-view").then((m) => ({ default: m.TimelineView })));
+const DashboardsView = React.lazy(() => import("./dashboards-view").then((m) => ({ default: m.DashboardsView })));
+const UptimeView = React.lazy(() => import("./uptime-view").then((m) => ({ default: m.UptimeView })));
 
 function RouteFallback() {
   return <div className="flex h-full items-center justify-center text-tertiary">Loading…</div>;
@@ -49,9 +50,18 @@ const rootRoute = createRootRouteWithContext<{
   },
 });
 
-const dashboardRoute = createRoute({
+const commandCenterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
+  component: CommandCenterView,
+  staticData: {
+    title: "Command Center",
+  },
+});
+
+const dashboardRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/dashboard",
   component: DashboardView,
   staticData: {
     title: "Dashboard",
@@ -61,7 +71,7 @@ const dashboardRoute = createRoute({
 const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/accounts",
-  component: AccountsView,
+  component: withSuspense(AccountsView),
   staticData: {
     title: "Accounts",
   },
@@ -70,18 +80,18 @@ const accountsRoute = createRoute({
 const appsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/apps",
-  component: AppsView,
+  component: withSuspense(AppsView),
   staticData: {
     title: "Apps",
   },
 });
 
-const grafanaRoute = createRoute({
+const dashboardsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/grafana",
-  component: GrafanaView,
+  path: "/dashboards",
+  component: withSuspense(DashboardsView),
   staticData: {
-    title: "Grafana",
+    title: "Dashboards",
   },
 });
 
@@ -97,7 +107,7 @@ const insightsRoute = createRoute({
 const incidentsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/incidents",
-  component: IncidentsView,
+  component: withSuspense(IncidentsView),
   staticData: {
     title: "Incidents",
   },
@@ -115,7 +125,7 @@ const timelineRoute = createRoute({
 const uptimeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/uptime",
-  component: UptimeView,
+  component: withSuspense(UptimeView),
   staticData: {
     title: "Uptime",
   },
@@ -124,13 +134,14 @@ const uptimeRoute = createRoute({
 const alertsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/alerts",
-  component: AlertsView,
+  component: withSuspense(AlertsView),
   staticData: {
     title: "Alert rules",
   },
 });
 
 const routeTree = rootRoute.addChildren([
+  commandCenterRoute,
   dashboardRoute,
   appsRoute,
   insightsRoute,
@@ -138,7 +149,7 @@ const routeTree = rootRoute.addChildren([
   timelineRoute,
   uptimeRoute,
   alertsRoute,
-  grafanaRoute,
+  dashboardsRoute,
   accountsRoute,
 ]);
 

@@ -143,6 +143,9 @@ async function fetchPagesItems(account: Account, token: string, accountId: strin
         logLabel: "View logs",
         logFallbackUrl: `${DASH_BASE}/${accountId}/pages/view/${encodeURIComponent(project.name)}`,
         logRef: { accountId, projectName: project.name, deploymentId: dep.id },
+        liveLogAvailable: mapPagesStatus(dep.latest_stage?.status) === "running" || mapPagesStatus(dep.latest_stage?.status) === "queued",
+        liveLogPollSeconds: 10,
+        liveLogLabel: "Follow",
       });
     }
   }

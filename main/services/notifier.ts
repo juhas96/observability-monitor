@@ -7,7 +7,9 @@ import { Notification, shell, logger } from "@glaze/core/backend";
 
 import type { StatusTransition } from "./diff-engine.js";
 import { dispatch } from "./dispatch.js";
+import { isNotificationMuted } from "./notification-mute.js";
 import { isSilenced } from "./triage-store.js";
+import { listAccounts } from "./accounts-store.js";
 import type { MonitorSettings } from "./types.js";
 
 function providerLabel(kind: string): string {
@@ -24,12 +26,19 @@ function providerLabel(kind: string): string {
 }
 
 export async function notifyTransitions(transitions: StatusTransition[], settings: MonitorSettings): Promise<void> {
-  // Global snooze: suppress all delivery while muted.
-  if (settings.mutedUntil && new Date(settings.mutedUntil).getTime() > Date.now()) return;
-
   const nativeSupported = Notification.isSupported();
+  const accounts = await listAccounts().catch(() => []);
+  const groupByAccount = new Map(accounts.map((account) => [account.id, account.groupId]));
 
   for (const t of transitions) {
+    // Global snooze suppresses all delivery. Scoped recurring maintenance windows
+    // suppress only matching provider/account/group rows.
+    if (isNotificationMuted(settings, new Date(), {
+      accountId: t.item.accountId,
+      provider: t.item.provider,
+      groupId: groupByAccount.get(t.item.accountId),
+    })) continue;
+
     const isFailure = t.next === "failure";
     const isSuccess = t.next === "success";
 

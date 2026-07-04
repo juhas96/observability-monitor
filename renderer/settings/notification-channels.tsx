@@ -16,10 +16,21 @@ import {
   EmptyState,
   toast,
 } from "@glaze/core/components";
-import { Trash2, Send } from "lucide-react";
+import { Download, Trash2, Send } from "lucide-react";
+
+import {
+  ALL,
+  type AppliedFilter,
+  FilterMenu,
+  FilterSearchField,
+  FilterSelectField,
+  optionLabel,
+  useStoredState,
+} from "../main/components/filters";
+import { downloadCsv } from "../main/utils/csv";
 
 type ChannelType = "slack" | "webhook";
-type DispatchEventKind = "failure" | "success" | "alert" | "digest";
+type DispatchEventKind = "failure" | "success" | "alert" | "recovery" | "digest";
 
 interface ChannelView {
   id: string;
@@ -34,18 +45,54 @@ const EVENT_OPTIONS: { key: DispatchEventKind; label: string }[] = [
   { key: "failure", label: "Failures" },
   { key: "success", label: "Successes" },
   { key: "alert", label: "Alerts" },
+  { key: "recovery", label: "Recoveries" },
   { key: "digest", label: "Digests" },
 ];
+
+const FILTER_KEY = "notificationChannels.filters.v1";
+const FILTER_PRESET_KEY = `${FILTER_KEY}.presets`;
+
+interface ChannelFilters {
+  search: string;
+  type: "all" | ChannelType;
+  enabled: "all" | "enabled" | "disabled";
+  url: "all" | "configured" | "missing";
+  event: "all" | DispatchEventKind;
+}
+
+const DEFAULT_FILTERS: ChannelFilters = {
+  search: "",
+  type: ALL,
+  enabled: "all",
+  url: "all",
+  event: "all",
+};
 
 const invoke = <T,>(channel: string, ...args: unknown[]): Promise<T> =>
   window.glazeAPI.glaze.ipc.invoke<T>(channel, ...args);
 
+function downloadChannelsCsv(channels: ChannelView[]): void {
+  const columns = ["id", "name", "type", "enabled", "urlConfigured", "events"];
+  const rows = channels.map((channel) => [
+    channel.id,
+    channel.name,
+    channel.type,
+    channel.enabled ? "enabled" : "disabled",
+    channel.hasUrl ? "configured" : "missing",
+    channel.events.join("; "),
+  ]);
+  downloadCsv(`notification-channels-${new Date().toISOString().slice(0, 10)}.csv`, columns, rows);
+}
+
 export function NotificationChannels() {
   const [channels, setChannels] = useState<ChannelView[]>([]);
+  const [storedFilters, setFilters, resetFilters] = useStoredState<ChannelFilters>(FILTER_KEY, DEFAULT_FILTERS);
+  const filters: ChannelFilters = { ...DEFAULT_FILTERS, ...storedFilters };
   const [name, setName] = useState("");
   const [type, setType] = useState<ChannelType>("slack");
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const setFilter = <K extends keyof ChannelFilters>(key: K, value: ChannelFilters[K]) => setFilters({ ...filters, [key]: value });
 
   const reload = async () => {
     try {
@@ -115,12 +162,79 @@ export function NotificationChannels() {
   };
 
   const deleteChannel = async (channel: ChannelView) => {
+    if (!window.confirm(`Delete notification channel "${channel.name}"?`)) return;
     try {
       await invoke("channels:delete", { id: channel.id });
       await reload();
+      toast.success("Channel deleted.");
     } catch (error) {
       toast.error(`Failed to delete channel: ${error}`);
     }
+  };
+
+  const typeOptions = [
+    { value: ALL, label: "All channel types" },
+    { value: "slack", label: "Slack" },
+    { value: "webhook", label: "Webhook" },
+  ];
+  const enabledOptions = [
+    { value: "all", label: "All states" },
+    { value: "enabled", label: "Enabled" },
+    { value: "disabled", label: "Disabled" },
+  ];
+  const urlOptions = [
+    { value: "all", label: "All URL states" },
+    { value: "configured", label: "URL configured" },
+    { value: "missing", label: "URL missing" },
+  ];
+  const eventOptions = [
+    { value: "all", label: "All events" },
+    ...EVENT_OPTIONS.map((event) => ({ value: event.key, label: event.label })),
+  ];
+  const filteredChannels = channels.filter((channel) => {
+    const search = filters.search.trim().toLowerCase();
+    if (search) {
+      const subscribedEvents = EVENT_OPTIONS
+        .filter((event) => channel.events.includes(event.key))
+        .map((event) => event.label)
+        .join(" ");
+      const haystack = [
+        channel.name,
+        channel.type === "slack" ? "Slack" : "Webhook",
+        channel.enabled ? "enabled" : "disabled",
+        channel.hasUrl ? "url configured" : "url missing",
+        subscribedEvents,
+      ].join(" ").toLowerCase();
+      if (!haystack.includes(search)) return false;
+    }
+    if (filters.type !== ALL && channel.type !== filters.type) return false;
+    if (filters.enabled === "enabled" && !channel.enabled) return false;
+    if (filters.enabled === "disabled" && channel.enabled) return false;
+    if (filters.url === "configured" && !channel.hasUrl) return false;
+    if (filters.url === "missing" && channel.hasUrl) return false;
+    if (filters.event !== "all" && !channel.events.includes(filters.event)) return false;
+    return true;
+  });
+  const activeFilters: AppliedFilter[] = [
+    filters.search.trim()
+      ? { id: "search", label: "Search", value: filters.search.trim(), onClear: () => setFilter("search", DEFAULT_FILTERS.search) }
+      : null,
+    filters.type !== DEFAULT_FILTERS.type
+      ? { id: "type", label: "Type", value: optionLabel(typeOptions, filters.type), onClear: () => setFilter("type", DEFAULT_FILTERS.type) }
+      : null,
+    filters.enabled !== DEFAULT_FILTERS.enabled
+      ? { id: "enabled", label: "State", value: optionLabel(enabledOptions, filters.enabled), onClear: () => setFilter("enabled", DEFAULT_FILTERS.enabled) }
+      : null,
+    filters.url !== DEFAULT_FILTERS.url
+      ? { id: "url", label: "URL", value: optionLabel(urlOptions, filters.url), onClear: () => setFilter("url", DEFAULT_FILTERS.url) }
+      : null,
+    filters.event !== DEFAULT_FILTERS.event
+      ? { id: "event", label: "Event", value: optionLabel(eventOptions, filters.event), onClear: () => setFilter("event", DEFAULT_FILTERS.event) }
+      : null,
+  ].filter((filter): filter is AppliedFilter => filter !== null);
+  const exportChannels = () => {
+    downloadChannelsCsv(filteredChannels);
+    toast.success(`Exported ${filteredChannels.length} notification ${filteredChannels.length === 1 ? "channel" : "channels"}`);
   };
 
   return (
@@ -130,7 +244,38 @@ export function NotificationChannels() {
           <EmptyState title="No channels" description="Add a Slack incoming webhook or a generic webhook URL." />
         ) : (
           <div className="flex flex-col gap-3">
-            {channels.map((channel) => (
+            <div className="flex items-center justify-between gap-2">
+              <Text variant="small" color="secondary">
+                {filteredChannels.length} of {channels.length} channels
+              </Text>
+              <div className="flex items-center gap-2">
+                <Button variant="glass" size="small" onClick={exportChannels} disabled={filteredChannels.length === 0}>
+                  <Download className="size-4" />
+                  Export CSV
+                </Button>
+                <FilterMenu
+                  filters={activeFilters}
+                  onReset={resetFilters}
+                  presetKey={FILTER_PRESET_KEY}
+                  presetValue={filters}
+                  onApplyPreset={(value) => setFilters({ ...DEFAULT_FILTERS, ...value })}
+                >
+                  <FilterSearchField label="Search" value={filters.search} onChange={(value) => setFilter("search", value)} placeholder="Name, event, state..." />
+                  <FilterSelectField label="Type" value={filters.type} onChange={(value) => setFilter("type", value as ChannelFilters["type"])} options={typeOptions} />
+                  <FilterSelectField label="State" value={filters.enabled} onChange={(value) => setFilter("enabled", value as ChannelFilters["enabled"])} options={enabledOptions} />
+                  <FilterSelectField label="URL" value={filters.url} onChange={(value) => setFilter("url", value as ChannelFilters["url"])} options={urlOptions} />
+                  <FilterSelectField label="Event" value={filters.event} onChange={(value) => setFilter("event", value as ChannelFilters["event"])} options={eventOptions} />
+                </FilterMenu>
+              </div>
+            </div>
+            {filteredChannels.length === 0 ? (
+              <EmptyState title="No channels match" description="Reset filters or adjust the selected channel filters.">
+                <Button variant="glass" size="small" onClick={resetFilters}>
+                  Reset filters
+                </Button>
+              </EmptyState>
+            ) : null}
+            {filteredChannels.map((channel) => (
               <div key={channel.id} className="flex flex-col gap-2 rounded-lg border border-separator p-3">
                 <div className="flex items-center gap-2">
                   <Badge variant="secondary">{channel.type === "slack" ? "Slack" : "Webhook"}</Badge>

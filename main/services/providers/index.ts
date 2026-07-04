@@ -17,6 +17,7 @@ import { statuspageProvider } from "./statuspage.js";
 import { datadogProvider } from "./datadog.js";
 import { honeycombProvider } from "./honeycomb.js";
 import { posthogProvider } from "./posthog.js";
+import { betterstackProvider } from "./betterstack.js";
 
 let registered = false;
 
@@ -35,6 +36,7 @@ export function registerProviders(): void {
   register(datadogProvider);
   register(honeycombProvider);
   register(posthogProvider);
+  register(betterstackProvider);
   registered = true;
 }
 

@@ -12,6 +12,7 @@ import * as digest from "../services/digest-scheduler.js";
 import * as registry from "../services/providers/index.js";
 import { getSettings, updateSettings } from "../services/settings-store.js";
 import { getToken, isEncryptionAvailable } from "../services/token-store.js";
+import { setTraySnooze } from "../services/tray-controller.js";
 import type { AggregateSnapshot, MonitorSettings } from "../services/types.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -67,6 +68,7 @@ export function registerMonitorHandlers(): void {
   ipcMain.handle("monitor:updateSettings", async (_event, payload: unknown): Promise<MonitorSettings> => {
     const patch = asRecord(payload) as Partial<MonitorSettings>;
     const next = await updateSettings(patch);
+    setTraySnooze(next.mutedUntil);
     ipcMain.broadcast("settings:monitor-changed", { value: next });
     await poller.reschedule();
     await digest.reschedule();

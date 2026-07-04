@@ -16,12 +16,13 @@ import { openSettingsWindow } from "./windows/settings-window.js";
 import * as poller from "./services/poller.js";
 import * as digest from "./services/digest-scheduler.js";
 import { getSettings, updateSettings } from "./services/settings-store.js";
-import { initTray } from "./services/tray-controller.js";
+import { initTray, setTraySnooze } from "./services/tray-controller.js";
 
 /** Set (or clear with undefined) the global notification snooze and notify the settings UI. */
 async function setSnooze(mutedUntil: string | undefined): Promise<void> {
   try {
     const next = await updateSettings({ mutedUntil });
+    setTraySnooze(next.mutedUntil);
     ipcMain.broadcast("settings:monitor-changed", { value: next });
   } catch (err) {
     logger.warn("main", "Failed to update snooze", { err: String(err) });
@@ -254,6 +255,7 @@ app.whenReady().then(async () => {
   try {
     const settings = await getSettings();
     app.setLoginItemSettings({ openAtLogin: settings.launchAtLogin });
+    setTraySnooze(settings.mutedUntil);
   } catch (error) {
     logger.warn("main", "Failed to apply login item setting", { err: String(error) });
   }

@@ -7,17 +7,21 @@ import * as fs from "fs/promises";
 import { dialog, ipcMain, logger } from "@glaze/core/backend";
 
 import {
+  clearRetainedHistory,
   deleteSlo,
   getAllEvents,
   getAllSamples,
   getEvents,
   getSeries,
   getSloStatus,
+  getStats,
+  historyDateRange,
   historyRange,
   listSlos,
+  pruneRetainedHistory,
   saveSlo,
 } from "../services/history-store.js";
-import type { HistoryEvent, HistoryEventType, HistorySample, Provider, SloDefinition } from "../services/types.js";
+import type { HistoryEvent, HistoryEventType, HistorySample, HistoryStats, Provider, SloDefinition } from "../services/types.js";
 
 function csvCell(value: unknown): string {
   const text = value == null ? "" : String(value);
@@ -25,9 +29,9 @@ function csvCell(value: unknown): string {
 }
 
 function eventsToCsv(events: HistoryEvent[]): string {
-  const header = ["id", "ts", "type", "provider", "accountId", "groupId", "title", "status", "severity", "url"];
+  const header = ["id", "ts", "type", "provider", "accountId", "groupId", "sourceUid", "category", "title", "status", "severity", "url"];
   const rows = events.map((e) =>
-    [e.id, e.ts, e.type, e.provider, e.accountId, e.groupId, e.title, e.status, e.severity, e.url].map(csvCell).join(","),
+    [e.id, e.ts, e.type, e.provider, e.accountId, e.groupId, e.sourceUid, e.category, e.title, e.status, e.severity, e.url].map(csvCell).join(","),
   );
   return [header.join(","), ...rows].join("\n");
 }
@@ -51,24 +55,58 @@ function asOptionalString(value: unknown): string | undefined {
 
 function asEventTypes(value: unknown): HistoryEventType[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  const allowed = new Set<HistoryEventType>(["deploy", "failure", "recovery", "alert", "incident"]);
+  const allowed = new Set<HistoryEventType>(["deploy", "failure", "recovery", "alert", "incident", "check"]);
   return value.filter((candidate): candidate is HistoryEventType => typeof candidate === "string" && allowed.has(candidate as HistoryEventType));
+}
+
+function hasExportFilters(req: Record<string, unknown>): boolean {
+  return Boolean(
+    req.range ||
+    req.dateRange ||
+    asOptionalString(req.groupId) ||
+    asOptionalString(req.accountId) ||
+    asOptionalString(req.provider) ||
+    asOptionalString(req.status) ||
+    asOptionalString(req.severity) ||
+    asOptionalString(req.category) ||
+    asEventTypes(req.types)?.length,
+  );
 }
 
 export function registerHistoryHandlers(): void {
   ipcMain.handle("history:getSeries", async (_event, payload: unknown) => {
     const req = asRecord(payload);
-    return await getSeries(historyRange(req.range));
+    return await getSeries(req.dateRange ? historyDateRange(req.dateRange) : historyRange(req.range), {
+      groupId: asOptionalString(req.groupId),
+      accountId: asOptionalString(req.accountId),
+      provider: asOptionalString(req.provider),
+    });
   });
 
   ipcMain.handle("history:getEvents", async (_event, payload: unknown) => {
     const req = asRecord(payload);
     return await getEvents({
-      range: historyRange(req.range),
+      range: req.dateRange ? historyDateRange(req.dateRange) : historyRange(req.range),
       groupId: asOptionalString(req.groupId),
+      accountId: asOptionalString(req.accountId),
       provider: asOptionalString(req.provider),
+      status: asOptionalString(req.status),
+      severity: asOptionalString(req.severity),
+      category: asOptionalString(req.category),
       types: asEventTypes(req.types),
     });
+  });
+
+  ipcMain.handle("history:getStats", async (): Promise<HistoryStats> => {
+    return await getStats();
+  });
+
+  ipcMain.handle("history:clear", async (): Promise<HistoryStats> => {
+    return await clearRetainedHistory();
+  });
+
+  ipcMain.handle("history:prune", async (): Promise<HistoryStats> => {
+    return await pruneRetainedHistory();
   });
 
   ipcMain.handle("history:listSlos", async (): Promise<SloDefinition[]> => {
@@ -111,7 +149,30 @@ export function registerHistoryHandlers(): void {
     const req = asRecord(payload);
     const dataset = req.dataset === "samples" ? "samples" : "events";
     const format = req.format === "json" ? "json" : "csv";
-    const [samples, events] = await Promise.all([getAllSamples(), getAllEvents()]);
+    const filtered = hasExportFilters(req);
+    const range = req.dateRange ? historyDateRange(req.dateRange) : historyRange(req.range);
+    const groupId = asOptionalString(req.groupId);
+    const accountId = asOptionalString(req.accountId);
+    const provider = asOptionalString(req.provider);
+    const samples = dataset === "samples"
+      ? filtered
+        ? await getSeries(range, { groupId, accountId, provider })
+        : await getAllSamples()
+      : [];
+    const events = dataset === "events"
+      ? filtered
+        ? await getEvents({
+          range,
+          groupId,
+          accountId,
+          provider,
+          status: asOptionalString(req.status),
+          severity: asOptionalString(req.severity),
+          category: asOptionalString(req.category),
+          types: asEventTypes(req.types),
+        })
+        : await getAllEvents()
+      : [];
 
     let contents: string;
     if (format === "json") {

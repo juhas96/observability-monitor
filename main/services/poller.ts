@@ -160,6 +160,18 @@ export function isPolling(): boolean {
   return running;
 }
 
+export function getAccountBackoff(accountId: string): { failures: number; nextAttemptAt: string; remainingSeconds: number } | undefined {
+  const state = backoff.get(accountId);
+  if (!state) return undefined;
+  const remainingSeconds = Math.ceil((state.nextAttemptAt - Date.now()) / 1000);
+  if (remainingSeconds <= 0) return undefined;
+  return {
+    failures: state.failures,
+    nextAttemptAt: new Date(state.nextAttemptAt).toISOString(),
+    remainingSeconds,
+  };
+}
+
 /** Force an immediate refresh (all accounts or one) and reschedule. */
 export async function refresh(onlyAccountId?: string): Promise<AggregateSnapshot> {
   const snapshot = await runCycle(onlyAccountId);

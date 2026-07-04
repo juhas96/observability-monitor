@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as React from "react";
-import { BellPlus, BellRing, GitCommitHorizontal, LayoutDashboard, LineChart, PanelsTopLeft, Plug, Radio, Siren } from "lucide-react";
+import { BellPlus, Gauge, GitCommitHorizontal, LayoutDashboard, LineChart, PanelsTopLeft, Plug, Radio, Siren } from "lucide-react";
 import { SplitView, Sidebar, SidebarList, SidebarListItem, Status } from "@glaze/core/components";
 import { useTheme, useConnection, useEnvironment } from "@glaze/core/hooks";
 import { CommandPalette } from "./components/command-palette";
@@ -9,19 +9,27 @@ interface NavItem {
   path: string;
   label: string;
   icon: React.ReactNode;
+  shortcut: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { path: "/", label: "Dashboard", icon: <LayoutDashboard className="size-4" /> },
-  { path: "/apps", label: "Apps", icon: <PanelsTopLeft className="size-4" /> },
-  { path: "/insights", label: "Insights", icon: <LineChart className="size-4" /> },
-  { path: "/incidents", label: "Incidents", icon: <Siren className="size-4" /> },
-  { path: "/timeline", label: "Timeline", icon: <GitCommitHorizontal className="size-4" /> },
-  { path: "/uptime", label: "Uptime", icon: <Radio className="size-4" /> },
-  { path: "/alerts", label: "Alert rules", icon: <BellPlus className="size-4" /> },
-  { path: "/grafana", label: "Grafana", icon: <BellRing className="size-4" /> },
-  { path: "/accounts", label: "Accounts", icon: <Plug className="size-4" /> },
+  { path: "/", label: "Command Center", icon: <Gauge className="size-4" />, shortcut: "1" },
+  { path: "/dashboard", label: "Dashboard", icon: <LayoutDashboard className="size-4" />, shortcut: "2" },
+  { path: "/apps", label: "Apps", icon: <PanelsTopLeft className="size-4" />, shortcut: "3" },
+  { path: "/insights", label: "Insights", icon: <LineChart className="size-4" />, shortcut: "4" },
+  { path: "/incidents", label: "Incidents", icon: <Siren className="size-4" />, shortcut: "5" },
+  { path: "/timeline", label: "Timeline", icon: <GitCommitHorizontal className="size-4" />, shortcut: "6" },
+  { path: "/uptime", label: "Uptime", icon: <Radio className="size-4" />, shortcut: "7" },
+  { path: "/alerts", label: "Alert rules", icon: <BellPlus className="size-4" />, shortcut: "8" },
+  { path: "/dashboards", label: "Dashboards", icon: <LayoutDashboard className="size-4" />, shortcut: "9" },
+  { path: "/accounts", label: "Accounts", icon: <Plug className="size-4" />, shortcut: "0" },
 ];
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tagName = target.tagName.toLowerCase();
+  return target.isContentEditable || tagName === "input" || tagName === "textarea" || tagName === "select";
+}
 
 function AppSidebar() {
   const navigate = useNavigate();
@@ -48,6 +56,7 @@ function AppSidebar() {
 export function RootView() {
   useTheme();
 
+  const navigate = useNavigate();
   const connectionQuery = useConnection();
   const environmentQuery = useEnvironment();
   const [paletteOpen, setPaletteOpen] = React.useState(false);
@@ -63,11 +72,19 @@ export function RootView() {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && !isEditableTarget(event.target)) {
+        const target = NAV_ITEMS.find((item) => item.shortcut === event.key);
+        if (target) {
+          event.preventDefault();
+          void navigate({ to: target.path });
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [navigate]);
 
   return (
     <div className="h-full relative">

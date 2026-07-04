@@ -16,12 +16,16 @@ export function AccountSection({
   items,
   onOpen,
   onViewLogs,
+  onInvestigate,
+  onCreateAlertRule,
 }: {
   account: Account;
   status: PerAccountStatus | undefined;
   items: MonitorItem[];
   onOpen: (item: MonitorItem) => void;
   onViewLogs: (item: MonitorItem) => void;
+  onInvestigate?: (item: MonitorItem) => void;
+  onCreateAlertRule?: (item: MonitorItem) => void;
 }) {
   const Icon = providerIcon(account.provider);
 
@@ -58,7 +62,14 @@ export function AccountSection({
       ) : (
         <div className="flex flex-col">
           {items.map((item) => (
-            <RunRow key={item.uid} item={item} onOpen={onOpen} onViewLogs={onViewLogs} />
+            <RunRow
+              key={item.uid}
+              item={item}
+              onOpen={onOpen}
+              onViewLogs={onViewLogs}
+              onInvestigate={onInvestigate}
+              onCreateAlertRule={onCreateAlertRule}
+            />
           ))}
         </div>
       )}

@@ -18,7 +18,8 @@ export type Provider =
   | "statuspage"
   | "datadog"
   | "honeycomb"
-  | "posthog";
+  | "posthog"
+  | "betterstack";
 
 /** Broad display category used to pick a row icon/label; providers set it per item. */
 export type MonitorCategory =
@@ -117,6 +118,9 @@ export interface MonitorItem {
   logLabel?: string;
   logFallbackUrl?: string;
   logRef?: MonitorLogRef;
+  liveLogAvailable?: boolean;
+  liveLogPollSeconds?: number;
+  liveLogLabel?: string;
 }
 
 export interface PerAccountStatus {
@@ -215,6 +219,31 @@ export interface ServiceHealth {
   deepLinks: ProviderDeepLink[];
 }
 
+export type ServiceTier = "critical" | "standard" | "internal" | "experimental";
+
+export interface ServiceMetadata {
+  serviceId: string;
+  owner?: string;
+  tier?: ServiceTier;
+  runbookUrl?: string;
+  dashboardUrl?: string;
+  repositoryUrl?: string;
+  dependencies?: string[];
+  notes?: string;
+  updatedAt: string;
+}
+
+export interface ServiceMetadataInput {
+  serviceId: string;
+  owner?: string;
+  tier?: ServiceTier;
+  runbookUrl?: string;
+  dashboardUrl?: string;
+  repositoryUrl?: string;
+  dependencies?: string[];
+  notes?: string;
+}
+
 export interface AggregateSnapshot {
   items: MonitorItem[]; // newest-first, capped per account
   services: ServiceHealth[];
@@ -237,20 +266,189 @@ export interface DigestSettings {
   hour: number; // 0-23 local hour to deliver the digest
 }
 
+export interface MaintenanceWindow {
+  id: string;
+  label: string;
+  enabled: boolean;
+  days: number[]; // 0 = Sunday, 6 = Saturday, local time
+  startHour: number; // inclusive, local hour
+  endHour: number; // exclusive, local hour; can be <= startHour for overnight windows
+  scope?: RuleScope; // empty/undefined = all notifications
+}
+
 export interface MonitorSettings {
   pollIntervalSeconds: number;
   notifyOnFailure: boolean;
   notifyOnSuccess: boolean;
   notifyOnlyOnChange: boolean;
   soundOnNotify: boolean;
+  historyRetentionDays: number;
   digest: DigestSettings;
+  maintenanceWindows: MaintenanceWindow[];
   launchAtLogin: boolean;
   mutedUntil?: string; // ISO; while in the future all notifications are snoozed
 }
 
 export type HistoryRange = "15m" | "1h" | "6h" | "24h" | "7d" | "14d";
 
+export type DashboardVisualization = "line" | "area" | "bar" | "stat" | "table" | "logs" | "traces";
+export type DashboardPanelWidth = "half" | "full";
+export type DashboardPanelHeight = "small" | "medium" | "large";
+
+export type DashboardLocalMetric =
+  | "successFailure"
+  | "statusCounts"
+  | "incidentsAlerts"
+  | "events"
+  | "snapshotCounts"
+  | "checkLatency"
+  | "checkUptime";
+
+export interface DashboardPanelScope {
+  groupId?: string;
+  accountId?: string;
+  provider?: Provider;
+  checkId?: string;
+  owner?: string;
+  tier?: ServiceTier;
+  dependency?: string;
+}
+
+export interface DashboardLocalSource extends DashboardPanelScope {
+  kind: "local";
+  metric: DashboardLocalMetric;
+  range?: HistoryRange;
+  eventTypes?: HistoryEventType[];
+}
+
+export interface DashboardProviderSource {
+  kind: "provider";
+  accountId: string;
+  capabilityId: string;
+  range?: HistoryRange;
+  query?: string;
+  params?: Record<string, string>;
+  xField?: string;
+  yField?: string;
+}
+
+export type DashboardPanelSource = DashboardLocalSource | DashboardProviderSource;
+
+export interface DashboardPanel {
+  id: string;
+  title: string;
+  source: DashboardPanelSource;
+  visualization: DashboardVisualization;
+  width: DashboardPanelWidth;
+  height: DashboardPanelHeight;
+  refreshSeconds?: number;
+  order: number;
+}
+
+export interface DashboardPanelTemplate {
+  title: string;
+  source: DashboardPanelSource;
+  visualization: DashboardVisualization;
+  width: DashboardPanelWidth;
+  height: DashboardPanelHeight;
+  refreshSeconds?: number;
+}
+
+export interface DashboardVariables extends DashboardPanelScope {}
+
+export interface DashboardDefinition {
+  id: string;
+  name: string;
+  description?: string;
+  range: HistoryRange;
+  refreshSeconds?: number;
+  variables?: DashboardVariables;
+  panels: DashboardPanel[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DashboardInput {
+  id?: string;
+  name: string;
+  description?: string;
+  range: HistoryRange;
+  refreshSeconds?: number;
+  variables?: DashboardVariables;
+  panels: DashboardPanel[];
+}
+
+export type DashboardPanelResultKind = "timeseries" | "stat" | "table" | "logs" | "traces" | "events";
+
+export interface DashboardSeriesPoint {
+  ts: string;
+  label?: string;
+  series?: string;
+  value: number;
+}
+
+export interface DashboardTableRow {
+  __url?: string;
+  __urlLabel?: string;
+  [key: string]: string | number | boolean | null | undefined;
+}
+
+export interface DashboardStat {
+  label: string;
+  value: string | number;
+  unit?: string;
+  status?: NormalizedStatus;
+}
+
+export interface DashboardAnnotation {
+  ts: string;
+  type: HistoryEventType;
+  title: string;
+  status: NormalizedStatus | IncidentStatus;
+  severity: ObservabilitySeverity;
+  url?: string;
+}
+
+export interface DashboardPanelResult {
+  kind: DashboardPanelResultKind;
+  generatedAt: string;
+  title?: string;
+  points?: DashboardSeriesPoint[];
+  stats?: DashboardStat[];
+  rows?: DashboardTableRow[];
+  columns?: string[];
+  annotations?: DashboardAnnotation[];
+  warnings?: string[];
+  provider?: Provider;
+  accountId?: string;
+}
+
+export interface DashboardQueryCapability {
+  id: string;
+  label: string;
+  provider?: Provider;
+  accountId?: string;
+  accountLabel?: string;
+  description?: string;
+  queryLanguage?: string;
+  requiresQuery: boolean;
+  resultKind: DashboardPanelResultKind;
+  defaultVisualization: DashboardVisualization;
+  params?: { key: string; label: string; required?: boolean; placeholder?: string; defaultValue?: string }[];
+  defaultPanel?: DashboardPanelTemplate;
+}
+
+export interface DashboardProviderQuery {
+  capabilityId: string;
+  range: HistoryRange;
+  query?: string;
+  params?: Record<string, string>;
+  xField?: string;
+  yField?: string;
+}
+
 export type HistoryEventType = "deploy" | "failure" | "recovery" | "alert" | "incident" | "check";
+export type HistoryDateRange = { mode: "relative"; range: HistoryRange } | { mode: "custom"; from?: string; to?: string };
 
 export interface HistoryStatusCounts {
   success: number;
@@ -267,6 +465,8 @@ export interface HistorySampleAccount {
   provider: Provider;
   groupId?: string;
   counts: HistoryStatusCounts;
+  openIncidentCount?: number;
+  alertCount?: number;
 }
 
 export interface HistorySample {
@@ -288,10 +488,26 @@ export interface HistoryEvent {
   accountId: string;
   groupId?: string;
   sourceUid?: string;
+  category?: MonitorCategory;
   title: string;
   status: NormalizedStatus | IncidentStatus;
   severity: ObservabilitySeverity;
   url: string;
+}
+
+export interface HistoryStats {
+  retentionDays: number;
+  storageBytes: number;
+  sampleCount: number;
+  eventCount: number;
+  checkSampleCount: number;
+  sloCount: number;
+  oldestSampleAt?: string;
+  newestSampleAt?: string;
+  oldestEventAt?: string;
+  newestEventAt?: string;
+  oldestCheckSampleAt?: string;
+  newestCheckSampleAt?: string;
 }
 
 export interface SloDefinition {
@@ -322,6 +538,55 @@ export interface SloStatus {
 export interface TriageState {
   acknowledgedAt?: string;
   silencedUntil?: string;
+}
+
+export type LocalIncidentStatus = "open" | "acknowledged" | "resolved";
+export type LocalIncidentSourceKind = "signal" | "incident" | "manual";
+
+export interface LocalIncidentNote {
+  id: string;
+  body: string;
+  createdAt: string;
+}
+
+export interface LocalIncident {
+  id: string;
+  sourceKind: LocalIncidentSourceKind;
+  sourceUid?: string;
+  sourceUrl?: string;
+  accountId?: string;
+  provider?: Provider;
+  title: string;
+  description?: string;
+  status: LocalIncidentStatus;
+  severity: ObservabilitySeverity;
+  assignee?: string;
+  rootCause?: string;
+  resolvedReason?: string;
+  relatedEventIds: string[];
+  notes: LocalIncidentNote[];
+  createdAt: string;
+  updatedAt: string;
+  acknowledgedAt?: string;
+  resolvedAt?: string;
+}
+
+export interface LocalIncidentInput {
+  id?: string;
+  sourceKind?: LocalIncidentSourceKind;
+  sourceUid?: string;
+  sourceUrl?: string;
+  accountId?: string;
+  provider?: Provider;
+  title: string;
+  description?: string;
+  status?: LocalIncidentStatus;
+  severity?: ObservabilitySeverity;
+  assignee?: string;
+  rootCause?: string;
+  resolvedReason?: string;
+  relatedEventIds?: string[];
+  note?: string;
 }
 
 /** A user-defined HTTP uptime/synthetic check (no secret). */
@@ -377,7 +642,7 @@ export interface CheckSeries {
 }
 
 /** Metric a custom alerting rule evaluates against the latest snapshot. */
-export type RuleMetric = "failureRate" | "latency" | "openIncidents";
+export type RuleMetric = "failureRate" | "latency" | "checkDown" | "openIncidents";
 export type RuleOperator = "gt" | "lt";
 
 export interface RuleScope {
@@ -395,9 +660,13 @@ export interface AlertRule {
   operator: RuleOperator;
   threshold: number;
   scope: RuleScope;
+  channelIds?: string[]; // optional explicit delivery targets; empty/undefined falls back to channel event subscriptions
   enabled: boolean;
+  minSeverity?: ObservabilitySeverity; // incident rules only; undefined = any severity
   forMinutes?: number; // breach must be sustained this long before firing (0 = instant)
   cooldownMinutes?: number; // minimum gap between fires after a recovery
+  dedupeMinutes?: number; // suppress repeated deliveries inside this window without resetting state
+  mutedUntil?: string; // ISO; while in the future notifications for this rule are suppressed
   createdAt: string;
   updatedAt: string;
 }
@@ -409,9 +678,13 @@ export interface AlertRuleInput {
   operator: RuleOperator;
   threshold: number;
   scope: RuleScope;
+  channelIds?: string[] | null;
   enabled?: boolean;
+  minSeverity?: ObservabilitySeverity | null;
   forMinutes?: number;
   cooldownMinutes?: number;
+  dedupeMinutes?: number;
+  mutedUntil?: string | null;
 }
 
 /** Current evaluation state of a rule, exposed to the renderer. */
@@ -423,17 +696,29 @@ export interface RuleState {
   since?: string; // when the current breach began
 }
 
+export interface RulePreview {
+  generatedAt: string;
+  value: number | null;
+  breaching: boolean;
+  description: string;
+  noDataReason?: string;
+}
+
 export const DEFAULT_SETTINGS: MonitorSettings = {
   pollIntervalSeconds: 60,
   notifyOnFailure: true,
   notifyOnSuccess: false,
   notifyOnlyOnChange: true,
   soundOnNotify: false,
+  historyRetentionDays: 14,
   digest: { enabled: false, cadence: "daily", hour: 9 },
+  maintenanceWindows: [],
   launchAtLogin: false,
 };
 
 export const MIN_POLL_INTERVAL_SECONDS = 30;
+export const MIN_HISTORY_RETENTION_DAYS = 1;
+export const MAX_HISTORY_RETENTION_DAYS = 90;
 
 /** Notification channel that forwards events to a Slack incoming webhook or generic webhook. */
 export type ChannelType = "slack" | "webhook";
@@ -461,9 +746,87 @@ export interface ChannelInput {
 }
 
 /** A single event forwarded to enabled channels. */
+export interface DispatchEventContext {
+  serviceId?: string;
+  serviceName?: string;
+  owner?: string;
+  tier?: ServiceTier;
+  runbookUrl?: string;
+  dashboardUrl?: string;
+  repositoryUrl?: string;
+  dependencies?: string[];
+}
+
 export interface DispatchEvent {
   kind: DispatchEventKind;
   title: string;
   body?: string;
   url?: string;
+  channelIds?: string[];
+  context?: DispatchEventContext;
+}
+
+export type DiagnosticStatus = "ok" | "warning" | "error" | "disabled" | "unknown";
+export type DiagnosticErrorCategory = "auth" | "permission" | "rateLimit" | "network" | "config" | "provider" | "unknown";
+
+export interface AccountDashboardCapabilityDiagnostic {
+  providerSupportsLive: boolean;
+  available: boolean;
+  capabilityCount: number;
+  defaultPanelCount: number;
+  customQueryCount: number;
+  capabilityLabels: string[];
+  defaultPanelTitles: string[];
+  customQueryLabels: string[];
+  queryLanguages: string[];
+  resultKinds: DashboardPanelResultKind[];
+  checkedAt?: string;
+  unavailableReason?: string;
+  error?: string;
+}
+
+export interface AccountDiagnostic {
+  accountId: string;
+  provider: Provider;
+  label: string;
+  enabled: boolean;
+  identity?: string;
+  groupId?: string;
+  status: DiagnosticStatus;
+  hasToken: boolean;
+  encryptionAvailable: boolean;
+  lastSyncAt?: string;
+  lastError?: string;
+  stale?: boolean;
+  staleReason?: string;
+  backoff?: {
+    failures: number;
+    nextAttemptAt: string;
+    remainingSeconds: number;
+  };
+  missingRequiredConfig: string[];
+  dashboardCapabilities?: AccountDashboardCapabilityDiagnostic;
+  validation?: {
+    ok: boolean;
+    checkedAt: string;
+    identity?: string;
+    error?: string;
+    category?: DiagnosticErrorCategory;
+  };
+}
+
+export type VerificationArea = "accounts" | "channels" | "checks" | "dashboards" | "local";
+export type VerificationStatus = "passed" | "warning" | "failed" | "skipped";
+
+export interface VerificationResult {
+  id: string;
+  area: VerificationArea;
+  label: string;
+  status: VerificationStatus;
+  detail?: string;
+}
+
+export interface VerificationReport {
+  generatedAt: string;
+  results: VerificationResult[];
 }

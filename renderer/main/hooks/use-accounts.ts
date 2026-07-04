@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { monitorApi } from "../ipc";
 import { SNAPSHOT_KEY } from "./use-monitor-data";
-import type { AddAccountRequest, UpdateAccountRequest } from "../types";
+import type { AddAccountRequest, PortableSetupExportRequest, UpdateAccountRequest } from "../types";
 
 export const ACCOUNTS_KEY = ["accounts"] as const;
 export const GROUPS_KEY = ["groups"] as const;
@@ -48,5 +48,16 @@ export function useAccountMutations() {
     onSuccess: invalidate,
   });
 
-  return { add, update, remove };
+  const exportSetup = useMutation({
+    mutationFn: (req: PortableSetupExportRequest) => monitorApi.exportPortableSetup(req),
+  });
+
+  const importSetup = useMutation({
+    mutationFn: () => monitorApi.importPortableSetup(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries();
+    },
+  });
+
+  return { add, update, remove, exportSetup, importSetup };
 }

@@ -5,7 +5,7 @@
 import { ipcMain, logger } from "@glaze/core/backend";
 
 import { deleteCheck, listChecks, saveCheck } from "../services/checks-store.js";
-import { getCheckLatencySeries, historyRange } from "../services/history-store.js";
+import { getCheckLatencySeries, historyDateRange, historyRange } from "../services/history-store.js";
 import type { CheckSeries, HttpCheck, HttpCheckInput } from "../services/types.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -53,7 +53,7 @@ export function registerCheckHandlers(): void {
   ipcMain.handle("checks:getLatencySeries", async (_event, payload: unknown): Promise<CheckSeries> => {
     const req = asRecord(payload);
     if (typeof req.checkId !== "string" || req.checkId.trim() === "") throw new Error("Check id is required.");
-    return getCheckLatencySeries(req.checkId, historyRange(req.range));
+    return getCheckLatencySeries(req.checkId, req.dateRange ? historyDateRange(req.dateRange) : historyRange(req.range));
   });
 
   logger.info("checks", "✓ Check handlers registered");

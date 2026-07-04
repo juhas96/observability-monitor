@@ -1,6 +1,20 @@
-# Observability Monitor
+# Multi Monitor
 
-Native macOS menu bar and dashboard app for monitoring CI/CD and ops activity across multiple providers.
+Native macOS menu bar and dashboard app for monitoring CI/CD, uptime, incidents, alerts, logs, traces, and observability activity across multiple provider accounts.
+
+## What It Monitors
+
+Multi Monitor connects many accounts across GitHub Actions, Cloudflare, Supabase, Netlify, Resend, Grafana, Heroku, Sentry, PagerDuty, Statuspage, Datadog, Honeycomb, PostHog, and Better Stack. Provider credentials are stored through the platform encrypted storage API; account metadata and UI state stay local.
+
+The main app includes:
+
+- grouped live account dashboard with retained history activity
+- Apps cockpit with local service ownership metadata, runbooks, dependencies, and health contributors
+- Custom Dashboards at `/dashboards` with Recharts panels, templates, local normalized data panels, provider-declared live query panels, row links, row search/sort, and CSV export
+- Insights, Timeline, Incidents, Uptime checks, Alert Rules, Accounts diagnostics, portable setup import/export, and notification channel settings
+- persisted per-tab filters and saved filter presets for data-heavy views
+
+The old dedicated Grafana tab has been replaced by Custom Dashboards. Grafana account config and saved Loki/Tempo presets are preserved and migrated into dashboard panels when dashboards are first loaded.
 
 ## Developer Prerequisites
 
@@ -62,10 +76,13 @@ npm run dev:renderer
 Run these before handing off code:
 
 ```bash
+npm run test:contracts
 npm run type-check
 npm run lint
 npm run build
 ```
+
+`npm run test:contracts` is a credential-free source check for provider registration, IPC/security boundaries, dashboard storage/linking, and shared filter/date-range wiring.
 
 Format code when needed:
 
@@ -85,7 +102,11 @@ The app stores local runtime data outside the repo under the platform `userData`
 
 - `accounts.json`: account metadata and project groups, no secrets.
 - `tokens.bin.json`: encrypted provider secrets.
-- `settings.json`: polling and notification settings.
+- `settings.json`: polling, notifications, digest, retention, launch, snooze, and maintenance-window settings.
+- `history.json`: retained local samples, events, check latency, and SLO state inputs.
+- `dashboards.json`: custom dashboard definitions and migrated Grafana preset state; no provider secrets.
+- `checks.json`, `rules.json`, `channels.json`, `local-incidents.json`, `service-metadata.json`: local uptime, alerting, notification metadata, incident lifecycle, and service annotations.
+- renderer `localStorage`: per-tab filter state, saved filter presets, and one-shot navigation/deep-link payloads.
 
 Provider credentials are encrypted through the platform safe storage API. Do not store raw tokens in source files, JSON fixtures, localStorage, or documentation examples.
 

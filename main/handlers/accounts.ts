@@ -6,9 +6,10 @@
  * returned by accounts:list.
  */
 
+import * as fs from "fs/promises";
 import { randomUUID } from "crypto";
 
-import { ipcMain, logger } from "@glaze/core/backend";
+import { dialog, ipcMain, logger } from "@glaze/core/backend";
 
 import {
   addAccount,
@@ -73,6 +74,68 @@ function groupInput(req: Record<string, unknown>): { groupId?: string | null; ne
   return {
     groupId: asOptionalGroupId(req.groupId),
     newGroupName: asOptionalString(req.newGroupName, "newGroupName"),
+  };
+}
+
+interface AccountBackupFile {
+  app: "multi-monitor";
+  version: 1;
+  exportedAt: string;
+  groups: ProjectGroup[];
+  accounts: Pick<Account, "provider" | "label" | "groupId" | "createdAt" | "enabled" | "identity" | "config">[];
+}
+
+interface AccountImportSummary {
+  imported: number;
+  skipped: number;
+  groupsCreated: number;
+  filePath?: string;
+}
+
+function accountFingerprint(account: Pick<Account, "provider" | "label" | "identity" | "config">): string {
+  return JSON.stringify({
+    provider: account.provider,
+    label: account.label.trim().toLowerCase(),
+    identity: account.identity?.trim().toLowerCase() ?? "",
+    config: account.config ?? {},
+  });
+}
+
+function asAccountBackupFile(value: unknown): AccountBackupFile {
+  const file = asRecord(value);
+  if (file.app !== "multi-monitor" || file.version !== 1) {
+    throw new Error("This is not a supported Multi Monitor account setup export.");
+  }
+  if (!Array.isArray(file.accounts) || !Array.isArray(file.groups)) {
+    throw new Error("Invalid account setup export.");
+  }
+  const groups = file.groups.map((candidate) => {
+    const group = asRecord(candidate);
+    return {
+      id: asString(group.id, "group.id"),
+      name: asString(group.name, "group.name"),
+      createdAt: asString(group.createdAt, "group.createdAt"),
+    };
+  });
+  const accounts = file.accounts.map((candidate) => {
+    const account = asRecord(candidate);
+    const provider = asProvider(account.provider);
+    return {
+      provider,
+      label: asString(account.label, "account.label"),
+      groupId: typeof account.groupId === "string" ? account.groupId : undefined,
+      createdAt: typeof account.createdAt === "string" ? account.createdAt : new Date().toISOString(),
+      enabled: typeof account.enabled === "boolean" ? account.enabled : false,
+      identity: typeof account.identity === "string" ? account.identity : undefined,
+      config: typeof account.config === "object" && account.config !== null ? (account.config as Record<string, string>) : {},
+    };
+  });
+  return {
+    app: "multi-monitor",
+    version: 1,
+    exportedAt: typeof file.exportedAt === "string" ? file.exportedAt : new Date().toISOString(),
+    groups,
+    accounts,
   };
 }
 
@@ -216,6 +279,103 @@ export function registerAccountHandlers(): void {
     aggregator.setKnownAccounts(await listAccounts(), await listGroups());
     pushSnapshot(aggregator.buildSnapshot());
     return { ok: true };
+  });
+
+  ipcMain.handle("accounts:exportSetup", async (): Promise<{ ok: boolean; filePath?: string }> => {
+    const [accounts, groups] = await Promise.all([listAccounts(), listGroups()]);
+    const backup: AccountBackupFile = {
+      app: "multi-monitor",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      groups,
+      accounts: accounts.map((account) => ({
+        provider: account.provider,
+        label: account.label,
+        groupId: account.groupId,
+        createdAt: account.createdAt,
+        enabled: account.enabled,
+        identity: account.identity,
+        config: account.config ?? {},
+      })),
+    };
+    const stamp = new Date().toISOString().slice(0, 10);
+    const result = await dialog.showSaveDialog({
+      title: "Export account setup",
+      defaultPath: `multi-monitor-account-setup-${stamp}.json`,
+      filters: [{ name: "JSON", extensions: ["json"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false };
+    await fs.writeFile(result.filePath, JSON.stringify(backup, null, 2), "utf-8");
+    return { ok: true, filePath: result.filePath };
+  });
+
+  ipcMain.handle("accounts:importSetup", async (): Promise<AccountImportSummary> => {
+    const result = await dialog.showOpenDialog({
+      title: "Import account setup",
+      filters: [{ name: "JSON", extensions: ["json"] }],
+      properties: ["openFile"],
+    });
+    if (result.canceled || !result.filePaths?.[0]) {
+      return { imported: 0, skipped: 0, groupsCreated: 0 };
+    }
+
+    const filePath = result.filePaths[0];
+    const parsed = JSON.parse(await fs.readFile(filePath, "utf-8")) as unknown;
+    const backup = asAccountBackupFile(parsed);
+    const existingAccounts = await listAccounts();
+    const existingGroups = await listGroups();
+    const existingFingerprints = new Set(existingAccounts.map(accountFingerprint));
+    const groupsByName = new Map(existingGroups.map((group) => [group.name.trim().toLowerCase(), group.id]));
+    const exportedGroupsById = new Map(backup.groups.map((group) => [group.id, group]));
+    const groupIdMap = new Map<string, string>();
+    let groupsCreated = 0;
+
+    for (const group of backup.groups) {
+      const key = group.name.trim().toLowerCase();
+      const existingGroupId = groupsByName.get(key);
+      if (existingGroupId) {
+        groupIdMap.set(group.id, existingGroupId);
+        continue;
+      }
+      const groupId = await resolveGroupAssignment({ newGroupName: group.name });
+      if (groupId) {
+        groupsByName.set(key, groupId);
+        groupIdMap.set(group.id, groupId);
+        groupsCreated += 1;
+      }
+    }
+
+    let imported = 0;
+    let skipped = 0;
+    for (const source of backup.accounts) {
+      const fingerprint = accountFingerprint(source);
+      if (existingFingerprints.has(fingerprint)) {
+        skipped += 1;
+        continue;
+      }
+      let groupId = source.groupId ? groupIdMap.get(source.groupId) : undefined;
+      if (!groupId && source.groupId) {
+        const exportedGroup = exportedGroupsById.get(source.groupId);
+        if (exportedGroup) groupId = await resolveGroupAssignment({ newGroupName: exportedGroup.name });
+      }
+      const account: Account = {
+        id: randomUUID(),
+        provider: source.provider,
+        label: source.label,
+        groupId,
+        createdAt: new Date().toISOString(),
+        enabled: false,
+        identity: source.identity,
+        config: source.config ?? {},
+      };
+      await addAccount(account);
+      existingFingerprints.add(fingerprint);
+      imported += 1;
+    }
+
+    aggregator.setKnownAccounts(await listAccounts(), await listGroups());
+    pushSnapshot(aggregator.buildSnapshot());
+    return { imported, skipped, groupsCreated, filePath };
   });
 
   logger.info("accounts", "✓ Account handlers registered");

@@ -5,7 +5,7 @@
 import { randomUUID } from "crypto";
 
 import { DataStore } from "./data-store.js";
-import type { AlertRule, AlertRuleInput, RuleMetric, RuleOperator } from "./types.js";
+import type { AlertRule, AlertRuleInput, ObservabilitySeverity, RuleMetric, RuleOperator } from "./types.js";
 
 interface RulesFile {
   rules: AlertRule[];
@@ -13,8 +13,33 @@ interface RulesFile {
 
 const store = new DataStore<RulesFile>("rules.json", { rules: [] });
 
-const METRICS: RuleMetric[] = ["failureRate", "latency", "openIncidents"];
+const METRICS: RuleMetric[] = ["failureRate", "latency", "checkDown", "openIncidents"];
 const OPERATORS: RuleOperator[] = ["gt", "lt"];
+const SEVERITIES: ObservabilitySeverity[] = ["critical", "high", "medium", "low", "info"];
+
+function normalizeMutedUntil(value: string | null | undefined): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const until = new Date(value).getTime();
+  return Number.isFinite(until) && until > Date.now() ? value : undefined;
+}
+
+function normalizeChannelIds(value: string[] | null | undefined): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const ids = [...new Set(value.map((id) => id.trim()).filter(Boolean))];
+  return ids.length > 0 ? ids : undefined;
+}
+
+function normalizeSeverity(value: ObservabilitySeverity | null | undefined): ObservabilitySeverity | undefined {
+  return value && SEVERITIES.includes(value) ? value : undefined;
+}
+
+function normalizeMinutes(value: number | undefined, { allowZero }: { allowZero: boolean }): number | undefined {
+  if (value == null) return undefined;
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes)) return undefined;
+  if (minutes === 0 && allowZero) return 0;
+  return minutes > 0 ? minutes : undefined;
+}
 
 export async function listRules(): Promise<AlertRule[]> {
   return (await store.load()).rules;
@@ -43,9 +68,13 @@ export async function saveRule(input: AlertRuleInput): Promise<AlertRule> {
       operator: input.operator,
       threshold,
       scope: input.scope,
+      channelIds: "channelIds" in input ? normalizeChannelIds(input.channelIds) : normalizeChannelIds(rules[idx].channelIds),
       enabled: input.enabled ?? rules[idx].enabled,
-      forMinutes: input.forMinutes,
-      cooldownMinutes: input.cooldownMinutes,
+      minSeverity: "minSeverity" in input ? normalizeSeverity(input.minSeverity) : normalizeSeverity(rules[idx].minSeverity),
+      forMinutes: normalizeMinutes(input.forMinutes, { allowZero: true }),
+      cooldownMinutes: normalizeMinutes(input.cooldownMinutes, { allowZero: true }),
+      dedupeMinutes: normalizeMinutes(input.dedupeMinutes, { allowZero: false }),
+      mutedUntil: "mutedUntil" in input ? normalizeMutedUntil(input.mutedUntil) : normalizeMutedUntil(rules[idx].mutedUntil),
       updatedAt: now,
     };
     rules[idx] = rule;
@@ -57,9 +86,13 @@ export async function saveRule(input: AlertRuleInput): Promise<AlertRule> {
       operator: input.operator,
       threshold,
       scope: input.scope,
+      channelIds: normalizeChannelIds(input.channelIds),
       enabled: input.enabled ?? true,
-      forMinutes: input.forMinutes,
-      cooldownMinutes: input.cooldownMinutes,
+      minSeverity: normalizeSeverity(input.minSeverity),
+      forMinutes: normalizeMinutes(input.forMinutes, { allowZero: true }),
+      cooldownMinutes: normalizeMinutes(input.cooldownMinutes, { allowZero: true }),
+      dedupeMinutes: normalizeMinutes(input.dedupeMinutes, { allowZero: false }),
+      mutedUntil: normalizeMutedUntil(input.mutedUntil),
       createdAt: now,
       updatedAt: now,
     };

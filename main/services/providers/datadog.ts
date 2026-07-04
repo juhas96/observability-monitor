@@ -3,8 +3,19 @@
  * Credential: a single secret containing "api_key:application_key".
  */
 
-import type { MetricsSummary, MonitorItem, NormalizedStatus, ObservabilitySignal } from "../types.js";
+import type {
+  DashboardPanelResult,
+  DashboardProviderQuery,
+  DashboardQueryCapability,
+  DashboardTableRow,
+  MetricsSummary,
+  MonitorItem,
+  NormalizedStatus,
+  ObservabilitySignal,
+} from "../types.js";
 import type { ProviderDefinition } from "./registry.js";
+
+const DEFAULT_MONITOR_LIMIT = "50";
 
 function parseToken(token: string): { apiKey: string; appKey?: string } {
   const [apiKey, appKey] = token.split(/[:\s,]+/).map((part) => part.trim()).filter(Boolean);
@@ -54,6 +65,12 @@ interface DatadogMonitor {
   message?: string;
 }
 
+function boundedLimit(value: string | undefined): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return Number(DEFAULT_MONITOR_LIMIT);
+  return Math.min(100, Math.max(1, Math.floor(parsed)));
+}
+
 function mapState(state: string | undefined): NormalizedStatus {
   switch (state) {
     case "Alert":
@@ -67,6 +84,38 @@ function mapState(state: string | undefined): NormalizedStatus {
     default:
       return "unknown";
   }
+}
+
+function monitorParams(creds: Record<string, string>, query?: DashboardProviderQuery): URLSearchParams {
+  const params = new URLSearchParams({ group_states: "all", page_size: String(boundedLimit(query?.params?.limit)) });
+  const monitorTags = query?.params?.monitorTags ?? creds.monitorTags ?? "";
+  const tags = monitorTags.split(",").map((tag) => tag.trim()).filter(Boolean);
+  if (tags.length > 0) params.set("monitor_tags", tags.join(","));
+  const name = query?.params?.name?.trim();
+  if (name) params.set("name", name);
+  return params;
+}
+
+async function fetchMonitors(creds: Record<string, string>, query?: DashboardProviderQuery): Promise<DatadogMonitor[]> {
+  const parsed = parseToken(creds.token);
+  if (!parsed.appKey) throw new Error("Datadog application key is required for monitor dashboard panels.");
+  const monitors = await ddFetch<DatadogMonitor[]>(creds.site, creds.token, `/api/v1/monitor?${monitorParams(creds, query)}`);
+  const state = query?.params?.state?.trim();
+  return state && state !== "all" ? monitors.filter((monitor) => monitor.overall_state === state) : monitors;
+}
+
+function monitorRows(monitors: DatadogMonitor[], site: string | undefined): DashboardTableRow[] {
+  return monitors.map((monitor) => ({
+    id: monitor.id,
+    name: monitor.name ?? `Monitor ${monitor.id}`,
+    type: monitor.type ?? "",
+    state: monitor.overall_state ?? "",
+    updated: monitor.overall_state_modified || monitor.modified ? new Date(monitor.overall_state_modified || monitor.modified || "").toLocaleString() : "",
+    tags: (monitor.tags ?? []).slice(0, 8).join(", "),
+    message: monitor.message ?? "",
+    __url: `${appUrl(site)}/monitors/${monitor.id}`,
+    __urlLabel: "Open monitor",
+  }));
 }
 
 export const datadogProvider: ProviderDefinition = {
@@ -105,10 +154,7 @@ export const datadogProvider: ProviderDefinition = {
       }];
     }
 
-    const params = new URLSearchParams({ group_states: "all", page_size: "50" });
-    const tags = (creds.monitorTags ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
-    if (tags.length > 0) params.set("monitor_tags", tags.join(","));
-    const monitors = await ddFetch<DatadogMonitor[]>(creds.site, creds.token, `/api/v1/monitor?${params}`);
+    const monitors = await fetchMonitors(creds);
     return monitors
       .filter((monitor) => monitor.overall_state !== "OK")
       .map((monitor) => {
@@ -163,5 +209,52 @@ export const datadogProvider: ProviderDefinition = {
       ],
       url: `${appUrl(creds.site)}/monitors/manage`,
     } satisfies MetricsSummary];
+  },
+  async getDashboardQueryCapabilities(account, creds): Promise<DashboardQueryCapability[]> {
+    if (!parseToken(creds.token).appKey) return [];
+    return [{
+      id: "datadog.monitors",
+      label: `${account.label} monitors`,
+      description: "List Datadog monitors with optional name, tag, state, and limit filters.",
+      requiresQuery: false,
+      resultKind: "table",
+      defaultVisualization: "table",
+      defaultPanel: {
+        title: "Datadog monitors",
+        source: {
+          kind: "provider",
+          accountId: account.id,
+          capabilityId: "datadog.monitors",
+          params: {
+            monitorTags: creds.monitorTags ?? "",
+            state: "all",
+            limit: DEFAULT_MONITOR_LIMIT,
+          },
+        },
+        visualization: "table",
+        width: "full",
+        height: "medium",
+      },
+      params: [
+        { key: "monitorTags", label: "Monitor tags", required: false, placeholder: "service:api,env:prod", defaultValue: creds.monitorTags ?? "" },
+        { key: "name", label: "Name contains", required: false, placeholder: "api latency" },
+        { key: "state", label: "State", required: false, placeholder: "Alert / Warn / OK / No Data / all", defaultValue: "all" },
+        { key: "limit", label: "Limit", required: false, placeholder: DEFAULT_MONITOR_LIMIT, defaultValue: DEFAULT_MONITOR_LIMIT },
+      ],
+    }];
+  },
+  async runDashboardQuery(_account, creds, query: DashboardProviderQuery): Promise<DashboardPanelResult> {
+    if (query.capabilityId !== "datadog.monitors") throw new Error(`Unsupported Datadog dashboard query: ${query.capabilityId}`);
+    const monitors = await fetchMonitors(creds, query);
+    const failing = monitors.filter((monitor) => mapState(monitor.overall_state) === "failure").length;
+    const warning = monitors.filter((monitor) => mapState(monitor.overall_state) === "warning").length;
+    return {
+      kind: "table",
+      generatedAt: new Date().toISOString(),
+      rows: monitorRows(monitors, creds.site),
+      columns: ["id", "name", "type", "state", "updated", "tags", "message"],
+      provider: "datadog",
+      warnings: failing || warning ? [`${failing} alerting and ${warning} warning/no-data monitors returned.`] : undefined,
+    };
   },
 };

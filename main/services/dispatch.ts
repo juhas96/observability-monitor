@@ -11,9 +11,24 @@ import type { Channel, DispatchEvent } from "./types.js";
 
 const TIMEOUT_MS = 10_000;
 
+function contextLines(event: DispatchEvent): string[] {
+  const context = event.context;
+  if (!context) return [];
+  const lines = [
+    context.serviceName ? `Service: ${context.serviceName}` : undefined,
+    context.owner ? `Owner: ${context.owner}` : undefined,
+    context.tier ? `Tier: ${context.tier}` : undefined,
+    context.dependencies && context.dependencies.length > 0 ? `Dependencies: ${context.dependencies.join(", ")}` : undefined,
+    context.runbookUrl ? `Runbook: ${context.runbookUrl}` : undefined,
+    context.dashboardUrl ? `Dashboard: ${context.dashboardUrl}` : undefined,
+    context.repositoryUrl ? `Repository: ${context.repositoryUrl}` : undefined,
+  ];
+  return lines.filter((line): line is string => Boolean(line));
+}
+
 function payloadFor(channel: Channel, event: DispatchEvent): string {
   if (channel.type === "slack") {
-    const text = [event.title, event.body, event.url].filter(Boolean).join("\n");
+    const text = [event.title, event.body, ...contextLines(event), event.url].filter(Boolean).join("\n");
     return JSON.stringify({ text });
   }
   return JSON.stringify({
@@ -21,6 +36,7 @@ function payloadFor(channel: Channel, event: DispatchEvent): string {
     title: event.title,
     body: event.body,
     url: event.url,
+    context: event.context,
     at: new Date().toISOString(),
   });
 }
@@ -44,7 +60,7 @@ async function post(url: string, body: string): Promise<void> {
   }
 }
 
-/** Forward an event to every enabled channel subscribed to its kind. */
+/** Forward an event to explicit target channels, or every enabled channel subscribed to its kind. */
 export async function dispatch(event: DispatchEvent): Promise<void> {
   let channels: Channel[];
   try {
@@ -52,7 +68,8 @@ export async function dispatch(event: DispatchEvent): Promise<void> {
   } catch {
     return;
   }
-  const targets = channels.filter((c) => c.enabled && c.events.includes(event.kind));
+  const targetedIds = event.channelIds && event.channelIds.length > 0 ? new Set(event.channelIds) : null;
+  const targets = channels.filter((c) => c.enabled && (targetedIds ? targetedIds.has(c.id) : c.events.includes(event.kind)));
   await Promise.all(
     targets.map(async (channel) => {
       try {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { Download, Edit3, Plus, Trash2 } from "lucide-react";
+import { Download, Edit3, ExternalLink, Plus, Trash2 } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   Badge,
   Button,
@@ -21,37 +22,122 @@ import {
 } from "@glaze/core/components";
 
 import { BarChart, LineChart, ProgressBar, type ChartPoint } from "./components/charts";
+import {
+  ALL,
+  type AppliedFilter,
+  FilterDateRangeField,
+  FilterMenu,
+  FilterSelectField,
+  defaultDateRange,
+  dateRangeBounds,
+  dateRangeLabel,
+  optionLabel,
+  retainedHistoryDateBounds,
+  sameDateRange,
+  useStoredState,
+} from "./components/filters";
 import { providerLabel } from "./components/provider-meta";
 import { monitorApi } from "./ipc";
 import { useAccounts, useGroups } from "./hooks/use-accounts";
-import { useHistorySeries } from "./hooks/use-history";
+import { useHistoryEvents, useHistorySeries, useHistoryStats } from "./hooks/use-history";
 import { useProviders } from "./hooks/use-providers";
+import { useServiceMetadata } from "./hooks/use-service-metadata";
 import { useSloMutations, useSloStatus } from "./hooks/use-slos";
-import type { HistoryRange, HistorySample, Provider, SloDefinition, SloStatus } from "./types";
+import { downloadCsv } from "./utils/csv";
+import type { Account, HistoryEvent, HistorySample, HistorySampleAccount, Provider, ServiceMetadata, ServiceTier, SloDefinition, SloStatus } from "./types";
 
-const RANGE_OPTIONS: { value: HistoryRange; label: string }[] = [
-  { value: "15m", label: "15 minutes" },
-  { value: "1h", label: "1 hour" },
-  { value: "6h", label: "6 hours" },
-  { value: "24h", label: "24 hours" },
-  { value: "7d", label: "7 days" },
-  { value: "14d", label: "14 days" },
+const FILTER_KEY = "insights.filters.v2";
+const FILTER_PRESET_KEY = `${FILTER_KEY}.presets`;
+const ACCOUNT_SELECT_KEY = "accounts.select.v1";
+
+interface InsightsFilters {
+  dateRange: ReturnType<typeof defaultDateRange>;
+  group: string;
+  provider: "all" | Provider;
+  account: string;
+  owner: string;
+  tier: "all" | ServiceTier;
+  dependency: string;
+}
+
+const DEFAULT_FILTERS: InsightsFilters = {
+  dateRange: defaultDateRange("24h"),
+  group: ALL,
+  provider: "all",
+  account: ALL,
+  owner: ALL,
+  tier: "all",
+  dependency: ALL,
+};
+
+const SERVICE_TIERS: { value: ServiceTier; label: string }[] = [
+  { value: "critical", label: "Critical" },
+  { value: "standard", label: "Standard" },
+  { value: "internal", label: "Internal" },
+  { value: "experimental", label: "Experimental" },
 ];
-
-const ALL = "all";
-const GROUP_FILTER_KEY = "insights.groupFilter";
-const PROVIDER_FILTER_KEY = "insights.providerFilter";
 
 function timeLabel(ts: string): string {
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
-function countsFor(sample: HistorySample, groupId: string, provider: string) {
+function metadataForAccount(
+  accountId: string,
+  row: Pick<HistorySampleAccount, "groupId"> | undefined,
+  accountsById: Map<string, Account>,
+  metadataByService: Map<string, ServiceMetadata>,
+): ServiceMetadata | undefined {
+  const account = accountsById.get(accountId);
+  const serviceId = row?.groupId ?? account?.groupId ?? `account:${accountId}`;
+  return metadataByService.get(serviceId);
+}
+
+function matchesMetadataFilters(
+  metadata: ServiceMetadata | undefined,
+  filters: Pick<InsightsFilters, "owner" | "tier" | "dependency">,
+): boolean {
+  if (filters.owner !== ALL && metadata?.owner !== filters.owner) return false;
+  if (filters.tier !== "all" && metadata?.tier !== filters.tier) return false;
+  if (filters.dependency !== ALL && !metadata?.dependencies?.includes(filters.dependency)) return false;
+  return true;
+}
+
+function eventMetadata(
+  event: HistoryEvent,
+  accountsById: Map<string, Account>,
+  metadataByService: Map<string, ServiceMetadata>,
+): ServiceMetadata | undefined {
+  const account = accountsById.get(event.accountId);
+  const serviceId = event.groupId ?? account?.groupId ?? `account:${event.accountId}`;
+  return metadataByService.get(serviceId);
+}
+
+function sloMetadata(
+  slo: SloDefinition,
+  accountsById: Map<string, Account>,
+  metadataByService: Map<string, ServiceMetadata>,
+): ServiceMetadata | undefined {
+  if (slo.scope.groupId) return metadataByService.get(slo.scope.groupId);
+  if (slo.scope.accountId) {
+    const account = accountsById.get(slo.scope.accountId);
+    return metadataByService.get(account?.groupId ?? `account:${slo.scope.accountId}`);
+  }
+  return undefined;
+}
+
+function countsFor(
+  sample: HistorySample,
+  filters: InsightsFilters,
+  accountsById: Map<string, Account>,
+  metadataByService: Map<string, ServiceMetadata>,
+) {
   let success = 0;
   let failure = 0;
-  for (const row of Object.values(sample.perAccount)) {
-    if (groupId !== ALL && row.groupId !== groupId) continue;
-    if (provider !== ALL && row.provider !== provider) continue;
+  for (const [accountId, row] of Object.entries(sample.perAccount)) {
+    if (filters.account !== ALL && accountId !== filters.account) continue;
+    if (filters.group !== ALL && row.groupId !== filters.group) continue;
+    if (filters.provider !== ALL && row.provider !== filters.provider) continue;
+    if (!matchesMetadataFilters(metadataForAccount(accountId, row, accountsById, metadataByService), filters)) continue;
     success += row.counts.success;
     failure += row.counts.failure;
   }
@@ -60,6 +146,64 @@ function countsFor(sample: HistorySample, groupId: string, provider: string) {
 
 function pct(value: number | null): string {
   return value === null ? "n/a" : `${(value * 100).toFixed(2)}%`;
+}
+
+function sloScopeLabel(slo: SloDefinition, accountsById: Map<string, Account>, groupsById: Map<string, string>): string {
+  if (slo.scope.accountId) return `Account · ${accountsById.get(slo.scope.accountId)?.label ?? slo.scope.accountId}`;
+  if (slo.scope.groupId) return `Group · ${groupsById.get(slo.scope.groupId) ?? slo.scope.groupId}`;
+  if (slo.scope.provider) return `Provider · ${providerLabel(slo.scope.provider)}`;
+  return "All activity";
+}
+
+function downloadSloCsv(
+  statuses: SloStatus[],
+  accountsById: Map<string, Account>,
+  groupsById: Map<string, string>,
+  metadataByService: Map<string, ServiceMetadata>,
+): void {
+  const columns = [
+    "id",
+    "name",
+    "scope",
+    "scopeType",
+    "target",
+    "windowDays",
+    "compliance",
+    "remainingBudget",
+    "burnRate",
+    "atRisk",
+    "successCount",
+    "failureCount",
+    "owner",
+    "tier",
+    "dependencies",
+    "createdAt",
+    "updatedAt",
+  ];
+  const rows = statuses.map((status) => {
+    const metadata = sloMetadata(status.slo, accountsById, metadataByService);
+    const scopeType = status.slo.scope.accountId ? "account" : status.slo.scope.groupId ? "group" : status.slo.scope.provider ? "provider" : "all";
+    return [
+      status.slo.id,
+      status.slo.name,
+      sloScopeLabel(status.slo, accountsById, groupsById),
+      scopeType,
+      status.slo.target,
+      status.slo.windowDays,
+      status.compliance ?? "",
+      status.remainingBudget ?? "",
+      status.burnRate ?? "",
+      status.atRisk ? "yes" : "no",
+      status.successCount,
+      status.failureCount,
+      metadata?.owner ?? "",
+      metadata?.tier ?? "",
+      (metadata?.dependencies ?? []).join("; "),
+      status.slo.createdAt,
+      status.slo.updatedAt,
+    ];
+  });
+  downloadCsv(`slos-${new Date().toISOString().slice(0, 10)}.csv`, columns, rows);
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -210,6 +354,7 @@ function SloDialog({
 
 function SloCard({ status, onEdit }: { status: SloStatus; onEdit: () => void }) {
   const { remove } = useSloMutations();
+  const navigate = useNavigate();
   const points: ChartPoint[] = status.series.map((point) => ({
     label: timeLabel(point.ts),
     value: point.compliance === null ? 0 : point.compliance * 100,
@@ -222,6 +367,27 @@ function SloCard({ status, onEdit }: { status: SloStatus; onEdit: () => void }) 
     : status.slo.scope.provider
     ? providerLabel(status.slo.scope.provider)
     : "All activity";
+  const deleteSlo = async () => {
+    if (!window.confirm(`Delete SLO "${status.slo.name}"?`)) return;
+    try {
+      await remove.mutateAsync(status.slo.id);
+      toast.success("SLO deleted.");
+    } catch (error) {
+      toast.error(String(error));
+    }
+  };
+  const targetPayload = status.slo.scope.accountId
+    ? { accountId: status.slo.scope.accountId }
+    : status.slo.scope.groupId
+    ? { filters: { group: status.slo.scope.groupId } }
+    : status.slo.scope.provider
+    ? { filters: { provider: status.slo.scope.provider } }
+    : null;
+  const openTarget = () => {
+    if (!targetPayload) return;
+    localStorage.setItem(ACCOUNT_SELECT_KEY, JSON.stringify(targetPayload));
+    void navigate({ to: "/accounts" });
+  };
 
   return (
     <div className="rounded-lg border border-separator p-3 flex flex-col gap-3">
@@ -231,6 +397,11 @@ function SloCard({ status, onEdit }: { status: SloStatus; onEdit: () => void }) 
           <Text variant="small" color="secondary">{scope} · {status.slo.target}% over {status.slo.windowDays}d</Text>
         </div>
         <Badge color={status.atRisk ? "red" : "secondary"}>{status.atRisk ? "At risk" : "Tracking"}</Badge>
+        {targetPayload ? (
+          <Button variant="transparent" size="small" iconOnly aria-label="Open SLO target" onClick={openTarget}>
+            <ExternalLink className="size-4" />
+          </Button>
+        ) : null}
         <Button variant="transparent" size="small" iconOnly aria-label="Edit SLO" onClick={onEdit}>
           <Edit3 className="size-4" />
         </Button>
@@ -239,7 +410,7 @@ function SloCard({ status, onEdit }: { status: SloStatus; onEdit: () => void }) 
           size="small"
           iconOnly
           aria-label="Delete SLO"
-          onClick={() => void remove.mutateAsync(status.slo.id).catch((error) => toast.error(String(error)))}
+          onClick={() => void deleteSlo()}
         >
           <Trash2 className="size-4 text-support-red" />
         </Button>
@@ -256,40 +427,68 @@ function SloCard({ status, onEdit }: { status: SloStatus; onEdit: () => void }) 
 }
 
 export function InsightsView() {
-  const [range, setRange] = useState<HistoryRange>("24h");
-  const [groupFilter, setGroupFilter] = useState(() => localStorage.getItem(GROUP_FILTER_KEY) ?? ALL);
-  const [providerFilter, setProviderFilter] = useState(() => localStorage.getItem(PROVIDER_FILTER_KEY) ?? ALL);
+  const [storedFilters, setFilters, resetFilters] = useStoredState<InsightsFilters>(FILTER_KEY, DEFAULT_FILTERS);
+  const filters: InsightsFilters = { ...DEFAULT_FILTERS, ...storedFilters, dateRange: storedFilters.dateRange ?? DEFAULT_FILTERS.dateRange };
+  const historyStatsQuery = useHistoryStats();
+  const dateBounds = retainedHistoryDateBounds(historyStatsQuery.data);
   const [sloOpen, setSloOpen] = useState(false);
   const [editingSlo, setEditingSlo] = useState<SloDefinition | null>(null);
-  const seriesQuery = useHistorySeries(range);
+  const seriesQuery = useHistorySeries(filters.dateRange, {
+    groupId: filters.group === ALL ? undefined : filters.group,
+    accountId: filters.account === ALL ? undefined : filters.account,
+    provider: filters.provider === ALL ? undefined : filters.provider,
+  });
+  const eventsQuery = useHistoryEvents({
+    range: filters.dateRange,
+    groupId: filters.group === ALL ? undefined : filters.group,
+    accountId: filters.account === ALL ? undefined : filters.account,
+    provider: filters.provider === "all" ? undefined : filters.provider,
+    types: ["deploy", "failure", "recovery", "alert", "incident"],
+  });
   const sloStatusQuery = useSloStatus();
   const groupsQuery = useGroups();
   const providersQuery = useProviders();
+  const accountsQuery = useAccounts();
+  const serviceMetadataQuery = useServiceMetadata();
 
-  const setGroup = (value: string) => {
-    setGroupFilter(value);
-    localStorage.setItem(GROUP_FILTER_KEY, value);
-  };
-  const setProvider = (value: string) => {
-    setProviderFilter(value);
-    localStorage.setItem(PROVIDER_FILTER_KEY, value);
-  };
+  const setFilter = <K extends keyof InsightsFilters>(key: K, value: InsightsFilters[K]) => setFilters({ ...filters, [key]: value });
 
   const series = seriesQuery.data ?? [];
+  const accountsById = useMemo(() => new Map((accountsQuery.data ?? []).map((account) => [account.id, account])), [accountsQuery.data]);
+  const groupsById = useMemo(() => new Map((groupsQuery.data ?? []).map((group) => [group.id, group.name])), [groupsQuery.data]);
+  const serviceMetadataById = useMemo(() => new Map((serviceMetadataQuery.data ?? []).map((metadata) => [metadata.serviceId, metadata])), [serviceMetadataQuery.data]);
+  const filteredEvents = useMemo(() => (eventsQuery.data ?? []).filter((event) =>
+    matchesMetadataFilters(eventMetadata(event, accountsById, serviceMetadataById), filters)
+  ), [accountsById, eventsQuery.data, filters, serviceMetadataById]);
+  const filteredSloStatuses = useMemo(() => (sloStatusQuery.data ?? []).filter((status) =>
+    matchesMetadataFilters(sloMetadata(status.slo, accountsById, serviceMetadataById), filters)
+  ), [accountsById, filters, serviceMetadataById, sloStatusQuery.data]);
   const trendPoints = useMemo<ChartPoint[]>(() => series.map((sample) => {
-    const counts = countsFor(sample, groupFilter, providerFilter);
+    const counts = countsFor(sample, filters, accountsById, serviceMetadataById);
     return { label: timeLabel(sample.ts), value: counts.success, secondary: counts.failure };
-  }), [groupFilter, providerFilter, series]);
+  }), [accountsById, filters, series, serviceMetadataById]);
   const deployPoints = useMemo<ChartPoint[]>(() => series.map((sample) => ({
     label: timeLabel(sample.ts),
-    value: Object.values(sample.perAccount)
-      .filter((row) => (groupFilter === ALL || row.groupId === groupFilter) && (providerFilter === ALL || row.provider === providerFilter))
-      .reduce((sum, row) => sum + row.counts.success + row.counts.failure, 0),
-  })), [groupFilter, providerFilter, series]);
-  const alertPoints = useMemo<ChartPoint[]>(() => series.map((sample) => ({
-    label: timeLabel(sample.ts),
-    value: groupFilter === ALL && providerFilter === ALL ? sample.alertCount : 0,
-  })), [groupFilter, providerFilter, series]);
+    value: Object.entries(sample.perAccount)
+      .filter(([accountId, row]) =>
+        (filters.account === ALL || accountId === filters.account) &&
+        (filters.group === ALL || row.groupId === filters.group) &&
+        (filters.provider === ALL || row.provider === filters.provider) &&
+        matchesMetadataFilters(metadataForAccount(accountId, row, accountsById, serviceMetadataById), filters)
+      )
+      .reduce((sum, [, row]) => sum + row.counts.success + row.counts.failure, 0),
+  })), [accountsById, filters, series, serviceMetadataById]);
+  const alertPoints = useMemo<ChartPoint[]>(() => {
+    const { start, end } = dateRangeBounds(filters.dateRange);
+    const bucketMs = Math.max(60 * 1000, Math.ceil(Math.max(60 * 1000, end - start) / 120));
+    const buckets = new Map<number, number>();
+    for (const event of filteredEvents) {
+      if (event.type !== "alert") continue;
+      const bucket = Math.floor(new Date(event.ts).getTime() / bucketMs) * bucketMs;
+      buckets.set(bucket, (buckets.get(bucket) ?? 0) + 1);
+    }
+    return [...buckets.entries()].sort((a, b) => a[0] - b[0]).map(([bucket, value]) => ({ label: timeLabel(new Date(bucket).toISOString()), value }));
+  }, [filteredEvents, filters.dateRange]);
 
   const totals = trendPoints.reduce((sum, point) => ({
     success: sum.success + point.value,
@@ -300,38 +499,89 @@ export function InsightsView() {
 
   const exportEvents = async () => {
     try {
-      const result = await monitorApi.exportHistory({ dataset: "events", format: "csv" });
+      const result = await monitorApi.exportHistory({
+        dataset: "events",
+        format: "csv",
+        dateRange: filters.dateRange,
+        groupId: filters.group === ALL ? undefined : filters.group,
+        accountId: filters.account === ALL ? undefined : filters.account,
+        provider: filters.provider === "all" ? undefined : filters.provider,
+        types: ["deploy", "failure", "recovery", "alert", "incident"],
+      });
       if (result.ok) toast.success("History exported.");
     } catch (error) {
       toast.error(String(error));
     }
   };
+  const exportSlos = () => {
+    downloadSloCsv(filteredSloStatuses, accountsById, groupsById, serviceMetadataById);
+    toast.success(`Exported ${filteredSloStatuses.length} ${filteredSloStatuses.length === 1 ? "SLO" : "SLOs"}`);
+  };
+
+  const groupOptions = [{ value: ALL, label: "All groups" }, ...(groupsQuery.data ?? []).map((group) => ({ value: group.id, label: group.name }))];
+  const providerOptions = [{ value: ALL, label: "All providers" }, ...(providersQuery.data ?? []).map((provider) => ({ value: provider.id, label: provider.label }))];
+  const accountOptions = [{ value: ALL, label: "All accounts" }, ...(accountsQuery.data ?? []).map((account) => ({ value: account.id, label: account.label }))];
+  const ownerOptions = [
+    { value: ALL, label: "All owners" },
+    ...[...new Set((serviceMetadataQuery.data ?? []).map((metadata) => metadata.owner).filter((owner): owner is string => Boolean(owner)))]
+      .sort((a, b) => a.localeCompare(b))
+      .map((owner) => ({ value: owner, label: owner })),
+  ];
+  const tierOptions = [{ value: "all", label: "All tiers" }, ...SERVICE_TIERS];
+  const dependencyOptions = [
+    { value: ALL, label: "All dependencies" },
+    ...[...new Set((serviceMetadataQuery.data ?? []).flatMap((metadata) => metadata.dependencies ?? []))]
+      .sort((a, b) => a.localeCompare(b))
+      .map((dependency) => ({ value: dependency, label: dependency })),
+  ];
+  const activeFilters: AppliedFilter[] = [
+    !sameDateRange(filters.dateRange, DEFAULT_FILTERS.dateRange)
+      ? { id: "dateRange", label: "Range", value: dateRangeLabel(filters.dateRange), onClear: () => setFilter("dateRange", DEFAULT_FILTERS.dateRange) }
+      : null,
+    filters.group !== DEFAULT_FILTERS.group
+      ? { id: "group", label: "Group", value: optionLabel(groupOptions, filters.group), onClear: () => setFilter("group", DEFAULT_FILTERS.group) }
+      : null,
+    filters.provider !== DEFAULT_FILTERS.provider
+      ? { id: "provider", label: "Provider", value: optionLabel(providerOptions, filters.provider), onClear: () => setFilter("provider", DEFAULT_FILTERS.provider) }
+      : null,
+    filters.account !== DEFAULT_FILTERS.account
+      ? { id: "account", label: "Account", value: optionLabel(accountOptions, filters.account), onClear: () => setFilter("account", DEFAULT_FILTERS.account) }
+      : null,
+    filters.owner !== DEFAULT_FILTERS.owner
+      ? { id: "owner", label: "Owner", value: optionLabel(ownerOptions, filters.owner), onClear: () => setFilter("owner", DEFAULT_FILTERS.owner) }
+      : null,
+    filters.tier !== DEFAULT_FILTERS.tier
+      ? { id: "tier", label: "Tier", value: optionLabel(tierOptions, filters.tier), onClear: () => setFilter("tier", DEFAULT_FILTERS.tier) }
+      : null,
+    filters.dependency !== DEFAULT_FILTERS.dependency
+      ? { id: "dependency", label: "Dependency", value: optionLabel(dependencyOptions, filters.dependency), onClear: () => setFilter("dependency", DEFAULT_FILTERS.dependency) }
+      : null,
+  ].filter((filter): filter is AppliedFilter => filter !== null);
+  const hasRetainedHistory = Boolean(
+    historyStatsQuery.data &&
+    (historyStatsQuery.data.sampleCount > 0 || historyStatsQuery.data.eventCount > 0 || historyStatsQuery.data.checkSampleCount > 0),
+  );
 
   const actions = (
-    <div className="flex items-center gap-2">
+    <div className="flex min-w-0 items-center gap-2 flex-wrap justify-end">
+      <FilterMenu
+        filters={activeFilters}
+        onReset={resetFilters}
+        presetKey={FILTER_PRESET_KEY}
+        presetValue={filters}
+        onApplyPreset={(value) => setFilters({ ...DEFAULT_FILTERS, ...value, dateRange: value.dateRange ?? DEFAULT_FILTERS.dateRange })}
+      >
+        <FilterDateRangeField label="Range" value={filters.dateRange} onChange={(value) => setFilter("dateRange", value)} bounds={dateBounds} />
+        <FilterSelectField label="Group" value={filters.group} onChange={(value) => setFilter("group", value)} options={groupOptions} />
+        <FilterSelectField label="Provider" value={filters.provider} onChange={(value) => setFilter("provider", value as InsightsFilters["provider"])} options={providerOptions} />
+        <FilterSelectField label="Account" value={filters.account} onChange={(value) => setFilter("account", value)} options={accountOptions} />
+        <FilterSelectField label="Owner" value={filters.owner} onChange={(value) => setFilter("owner", value)} options={ownerOptions} />
+        <FilterSelectField label="Tier" value={filters.tier} onChange={(value) => setFilter("tier", value as InsightsFilters["tier"])} options={tierOptions} />
+        <FilterSelectField label="Dependency" value={filters.dependency} onChange={(value) => setFilter("dependency", value)} options={dependencyOptions} />
+      </FilterMenu>
       <Button variant="glass" size="large" onClick={exportEvents}>
         <Download className="size-4" /> Export
       </Button>
-      <Select value={range} onValueChange={(value) => setRange(value as HistoryRange)}>
-        <SelectTrigger variant="glass" size="large"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          {RANGE_OPTIONS.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <Select value={groupFilter} onValueChange={setGroup}>
-        <SelectTrigger variant="glass" size="large"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All groups</SelectItem>
-          {(groupsQuery.data ?? []).map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <Select value={providerFilter} onValueChange={setProvider}>
-        <SelectTrigger variant="glass" size="large"><SelectValue /></SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL}>All providers</SelectItem>
-          {(providersQuery.data ?? []).map((provider) => <SelectItem key={provider.id} value={provider.id}>{provider.label}</SelectItem>)}
-        </SelectContent>
-      </Select>
     </div>
   );
 
@@ -339,13 +589,19 @@ export function InsightsView() {
     <ScrollArea title="Insights" actions={actions} className="h-full">
       <div className="px-2 pb-8 flex flex-col gap-6">
         {series.length === 0 ? (
-          <EmptyState title="No history yet" description="History starts accumulating after the next polling cycle." />
+          hasRetainedHistory ? (
+            <EmptyState title="No history matches filters" description="Adjust the range or reset filters to show retained samples.">
+              {activeFilters.length > 0 ? <Button variant="glass" size="small" onClick={resetFilters}>Reset filters</Button> : null}
+            </EmptyState>
+          ) : (
+            <EmptyState title="No history yet" description="History starts accumulating after the next polling cycle." />
+          )
         ) : (
           <>
             <div className="grid grid-cols-3 gap-3">
               <StatCard label="Success rate" value={pct(successRate)} detail={`${totals.success} successful / ${totals.failure} failed`} />
-              <StatCard label="Open incidents" value={String(series[series.length - 1]?.openIncidentCount ?? 0)} />
-              <StatCard label="Alerts in range" value={String(series.reduce((sum, sample) => sum + sample.alertCount, 0))} />
+              <StatCard label="Incident events" value={String(filteredEvents.filter((event) => event.type === "incident").length)} />
+              <StatCard label="Alerts in range" value={String(filteredEvents.filter((event) => event.type === "alert").length)} />
             </div>
             <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
               <Section title="Success vs failure">
@@ -355,11 +611,7 @@ export function InsightsView() {
                 <BarChart points={deployPoints} label="Deploy and run frequency" />
               </Section>
               <Section title="Alert volume">
-                {groupFilter === ALL && providerFilter === ALL ? (
-                  <LineChart points={alertPoints} label="Alerts" />
-                ) : (
-                  <Callout color="secondary">Alert volume is stored globally in this version.</Callout>
-                )}
+                <LineChart points={alertPoints} label="Alerts" />
               </Section>
             </div>
           </>
@@ -368,7 +620,16 @@ export function InsightsView() {
         <section className="flex flex-col gap-3">
           <div className="flex items-center gap-2 px-2">
             <Text variant="strong">SLOs</Text>
-            <div className="ml-auto">
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="glass"
+                size="small"
+                onClick={exportSlos}
+                disabled={filteredSloStatuses.length === 0}
+              >
+                <Download className="size-4" />
+                Export SLOs
+              </Button>
               <Button
                 variant="glass"
                 size="small"
@@ -384,9 +645,16 @@ export function InsightsView() {
           </div>
           {(sloStatusQuery.data ?? []).length === 0 ? (
             <Callout color="secondary">Create an SLO to track compliance and error budget from persisted samples.</Callout>
+          ) : filteredSloStatuses.length === 0 ? (
+            <Callout color="secondary">
+              <div className="flex items-center justify-between gap-3">
+                <Text variant="small">No SLOs match the current filters.</Text>
+                <Button variant="glass" size="small" onClick={resetFilters}>Reset filters</Button>
+              </div>
+            </Callout>
           ) : (
             <div className="grid grid-cols-1 2xl:grid-cols-2 gap-4">
-              {(sloStatusQuery.data ?? []).map((status) => (
+              {filteredSloStatuses.map((status) => (
                 <SloCard
                   key={status.slo.id}
                   status={status}

@@ -1,4 +1,4 @@
-import { ExternalLink, ScrollText } from "lucide-react";
+import { Bell, ExternalLink, Search, ScrollText } from "lucide-react";
 import { Button, Text } from "@glaze/core/components";
 
 import { StatusBadge } from "./status-badge";
@@ -10,13 +10,18 @@ export function RunRow({
   item,
   onOpen,
   onViewLogs,
+  onInvestigate,
+  onCreateAlertRule,
 }: {
   item: MonitorItem;
   onOpen: (item: MonitorItem) => void;
   onViewLogs: (item: MonitorItem) => void;
+  onInvestigate?: (item: MonitorItem) => void;
+  onCreateAlertRule?: (item: MonitorItem) => void;
 }) {
   const Icon = categoryIcon(item.category, item.provider);
   const hasLogsAction = item.logAvailable || item.logFallbackUrl;
+  const canCreateAlertRule = Boolean(onCreateAlertRule && item.status !== "success");
   return (
     <div className="flex items-center gap-3 py-2 px-2 rounded-md hover:bg-control-subtle group">
       <Icon className="size-4 text-tertiary shrink-0" />
@@ -46,6 +51,32 @@ export function RunRow({
           onClick={() => onViewLogs(item)}
         >
           <ScrollText className="size-4" />
+        </Button>
+      ) : null}
+      {onInvestigate ? (
+        <Button
+          variant="transparent"
+          size="small"
+          iconOnly
+          aria-label="Start investigation"
+          title="Start investigation"
+          className="shrink-0 opacity-0 group-hover:opacity-100"
+          onClick={() => onInvestigate(item)}
+        >
+          <Search className="size-4" />
+        </Button>
+      ) : null}
+      {canCreateAlertRule ? (
+        <Button
+          variant="transparent"
+          size="small"
+          iconOnly
+          aria-label="Create alert rule"
+          title="Create alert rule"
+          className="shrink-0 opacity-0 group-hover:opacity-100"
+          onClick={() => onCreateAlertRule?.(item)}
+        >
+          <Bell className="size-4" />
         </Button>
       ) : null}
       <Button

@@ -5,7 +5,17 @@
  * Credential: personal access token (sbp_…) + project ref.
  */
 
-import type { Account, MonitorItem, MonitorLogLine, MonitorLogResponse } from "../types.js";
+import type {
+  Account,
+  DashboardPanelResult,
+  DashboardProviderQuery,
+  DashboardQueryCapability,
+  DashboardSeriesPoint,
+  DashboardTableRow,
+  MonitorItem,
+  MonitorLogLine,
+  MonitorLogResponse,
+} from "../types.js";
 import type { ProviderDefinition } from "./registry.js";
 
 const API_BASE = "https://api.supabase.com";
@@ -106,11 +116,66 @@ async function fetchErrorLogs(account: Account, token: string, ref: string): Pro
     logLabel: "View logs",
     logFallbackUrl: `https://supabase.com/dashboard/project/${ref}/logs/postgres-logs`,
     logRef: { projectRef: ref, source: "postgres_logs" },
+    liveLogAvailable: true,
+    liveLogPollSeconds: 5,
+    liveLogLabel: "Live",
   };
 }
 
 interface SbLogRowsResult {
   result?: Record<string, unknown>[];
+}
+
+const RECENT_ERROR_LOGS_SQL = [
+  "select timestamp, event_message, m.parsed.error_severity as level",
+  "from postgres_logs cross join unnest(metadata) as m",
+  "where m.parsed.error_severity in ('ERROR','FATAL','PANIC')",
+  "order by timestamp desc",
+  "limit 100",
+].join(" ");
+
+const DASHBOARD_QUERY_LIMIT = 100;
+
+function withResultLimit(query: string, maxLimit: number): string {
+  return /\blimit\s+\d+\b/i.test(query)
+    ? query.replace(/\blimit\s+(\d+)\b/ig, (_match, raw: string) => `limit ${Math.min(Math.max(Number(raw) || maxLimit, 1), maxLimit)}`)
+    : `${query} limit ${maxLimit}`;
+}
+
+function ensureReadOnlySql(query: string | undefined): string {
+  const trimmed = query?.trim() ?? "";
+  if (!/^select\b/i.test(trimmed)) throw new Error("Supabase dashboard SQL must start with SELECT.");
+  if (trimmed.includes(";")) throw new Error("Supabase dashboard SQL cannot contain semicolons.");
+  return withResultLimit(trimmed, DASHBOARD_QUERY_LIMIT);
+}
+
+function dashboardRows(rows: Record<string, unknown>[]): { rows: DashboardTableRow[]; columns: string[] } {
+  const columns = [...new Set(rows.flatMap((row) => Object.keys(row)))];
+  return {
+    columns,
+    rows: rows.map((row) => {
+      const out: DashboardTableRow = {};
+      for (const [key, value] of Object.entries(row)) {
+        out[key] = value == null || typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+          ? value
+          : JSON.stringify(value);
+      }
+      return out;
+    }),
+  };
+}
+
+function dashboardPoints(rows: DashboardTableRow[], xField: string | undefined, yField: string | undefined): DashboardSeriesPoint[] {
+  if (!xField || !yField) return [];
+  return rows
+    .map((row): DashboardSeriesPoint | null => {
+      const value = Number(row[yField]);
+      const rawTs = row[xField];
+      const ts = typeof rawTs === "string" || typeof rawTs === "number" ? new Date(rawTs).toISOString() : "";
+      if (!ts || !Number.isFinite(value)) return null;
+      return { ts, label: new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }), series: yField, value };
+    })
+    .filter((point): point is DashboardSeriesPoint => point !== null);
 }
 
 function logRowToLine(row: Record<string, unknown>): MonitorLogLine {
@@ -174,5 +239,46 @@ export const supabaseProvider: ProviderDefinition = {
     const ref = typeof item.logRef?.projectRef === "string" ? item.logRef.projectRef : creds.projectRef;
     if (!ref) throw new Error("Supabase project ref is missing from this item.");
     return await fetchProjectLogs(account, creds.token, ref, item);
+  },
+  async getDashboardQueryCapabilities(account): Promise<DashboardQueryCapability[]> {
+    return [{
+      id: "supabase.logs-sql",
+      label: `${account.label} logs SQL`,
+      description: "Run a read-only SELECT query against Supabase analytics logs for this project.",
+      queryLanguage: "SQL",
+      requiresQuery: true,
+      resultKind: "table",
+      defaultVisualization: "table",
+      defaultPanel: {
+        title: "Recent Supabase error logs",
+        source: {
+          kind: "provider",
+          accountId: account.id,
+          capabilityId: "supabase.logs-sql",
+          query: RECENT_ERROR_LOGS_SQL,
+        },
+        visualization: "table",
+        width: "full",
+        height: "medium",
+      },
+      params: [
+        { key: "xField", label: "X field", required: false, placeholder: "timestamp" },
+        { key: "yField", label: "Y field", required: false, placeholder: "count" },
+      ],
+    }];
+  },
+  async runDashboardQuery(_account, creds, query: DashboardProviderQuery): Promise<DashboardPanelResult> {
+    if (query.capabilityId !== "supabase.logs-sql") throw new Error(`Unsupported Supabase dashboard query: ${query.capabilityId}`);
+    const sql = ensureReadOnlySql(query.query);
+    const res = await sbFetch<SbLogRowsResult>(
+      creds.token,
+      `/v1/projects/${creds.projectRef}/analytics/endpoints/logs.all?sql=${encodeURIComponent(sql)}`,
+    );
+    if (!res.ok) throw new Error(`Supabase analytics query unavailable (status ${res.status}).`);
+    const { rows, columns } = dashboardRows(res.data.result ?? []);
+    const points = dashboardPoints(rows, query.xField ?? query.params?.xField, query.yField ?? query.params?.yField);
+    return points.length > 0
+      ? { kind: "timeseries", generatedAt: new Date().toISOString(), points, rows, columns }
+      : { kind: "table", generatedAt: new Date().toISOString(), rows, columns };
   },
 };

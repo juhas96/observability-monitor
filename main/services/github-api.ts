@@ -148,6 +148,9 @@ export async function fetchGitHubItems(account: Account, token: string): Promise
         logLabel: "View logs",
         logFallbackUrl: run.html_url,
         logRef: { owner: repo.owner, repo: repo.repo, runId: run.id },
+        liveLogAvailable: run.status === "in_progress" || run.status === "queued" || run.status === "waiting" || run.status === "requested",
+        liveLogPollSeconds: 10,
+        liveLogLabel: "Follow",
       });
     }
   }

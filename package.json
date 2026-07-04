@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "productName": "Observability Monitor",
   "description": "Cross-provider CI/CD, incident, status, and observability monitor",
-  "iconDescription": "A unified macOS monitoring dashboard for tracking CI/CD runs, deploys, incidents, status pages, alerts, logs, traces, and service health across providers such as GitHub, Cloudflare, Supabase, Netlify, Resend, Grafana, Heroku, Sentry, PagerDuty, Statuspage, Datadog, and Honeycomb. Think of an operations control panel with connected provider nodes and service health signals.",
+  "iconDescription": "A unified macOS monitoring dashboard for tracking CI/CD runs, deploys, incidents, status pages, alerts, logs, traces, and service health across providers such as GitHub, Cloudflare, Supabase, Netlify, Resend, Grafana, Heroku, Sentry, PagerDuty, Statuspage, Datadog, Honeycomb, PostHog, and Better Stack. Think of an operations control panel with connected provider nodes and service health signals.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "dev": "node glaze.ts dev",
     "dev:renderer": "node glaze.ts dev:renderer",
     "lint": "node glaze.ts lint",
+    "test:contracts": "tsx scripts/check-provider-contracts.ts",
     "type-check": "node glaze.ts type-check",
     "format": "node glaze.ts format"
   },

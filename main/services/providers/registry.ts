@@ -6,6 +6,9 @@
 
 import type {
   Account,
+  DashboardProviderQuery,
+  DashboardPanelResult,
+  DashboardQueryCapability,
   MetricsSummary,
   MonitorItem,
   MonitorLogResponse,
@@ -50,6 +53,10 @@ export interface ProviderDefinition extends ProviderInfo {
   getDeepLinks?(account: Account, creds: Record<string, string>, items: MonitorItem[]): Promise<ProviderDeepLink[]>;
   /** Fetch log/detail lines for one already-known snapshot item. */
   fetchLogs?(account: Account, creds: Record<string, string>, item: MonitorItem): Promise<MonitorLogResponse>;
+  /** Optional live custom-query capabilities for user-authored dashboards. */
+  getDashboardQueryCapabilities?(account: Account, creds: Record<string, string>): Promise<DashboardQueryCapability[]>;
+  /** Run one live custom dashboard query. Renderer never receives provider credentials. */
+  runDashboardQuery?(account: Account, creds: Record<string, string>, query: DashboardProviderQuery): Promise<DashboardPanelResult>;
 }
 
 const registry = new Map<Provider, ProviderDefinition>();

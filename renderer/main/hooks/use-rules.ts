@@ -37,5 +37,11 @@ export function useRuleMutations() {
     mutationFn: (id: string) => monitorApi.deleteRule(id),
     onSuccess: invalidate,
   });
-  return { save, remove };
+  const preview = useMutation({
+    mutationFn: (req: AlertRuleInput) => monitorApi.previewRule(req),
+  });
+  const testDelivery = useMutation({
+    mutationFn: (req: AlertRuleInput) => monitorApi.testRuleDelivery(req),
+  });
+  return { save, remove, preview, testDelivery };
 }

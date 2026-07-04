@@ -25,6 +25,7 @@ const MAX_MENU_ITEMS = 8;
 let tray: Tray | null = null;
 let callbacks: TrayCallbacks | null = null;
 let lastSnapshot: AggregateSnapshot | null = null;
+let mutedUntil: string | undefined;
 
 function statusColor(status: NormalizedStatus): MenuItemColor | undefined {
   switch (status) {
@@ -56,6 +57,20 @@ function statusGlyph(status: NormalizedStatus): string {
   }
 }
 
+function activeSnoozeLabel(): string | undefined {
+  if (!mutedUntil) return undefined;
+  const until = new Date(mutedUntil);
+  if (!Number.isFinite(until.getTime()) || until.getTime() <= Date.now()) return undefined;
+  return `Notifications snoozed until ${until.toLocaleString()}`;
+}
+
+function minutesUntilTomorrowMorning(): number {
+  const target = new Date();
+  target.setDate(target.getDate() + 1);
+  target.setHours(9, 0, 0, 0);
+  return Math.max(1, Math.ceil((target.getTime() - Date.now()) / 60_000));
+}
+
 function buildMenu(snapshot: AggregateSnapshot | null): Menu {
   const items = snapshot?.items.slice(0, MAX_MENU_ITEMS) ?? [];
   const failing = snapshot?.items.filter((i) => i.status === "failure").length ?? 0;
@@ -66,6 +81,7 @@ function buildMenu(snapshot: AggregateSnapshot | null): Menu {
   if (failing > 0) summaryParts.push(`${failing} failing`);
   if (checksDown > 0) summaryParts.push(`${checksDown} down`);
   if (rulesFiring > 0) summaryParts.push(`${rulesFiring} alerting`);
+  const snoozeLabel = activeSnoozeLabel();
 
   const template: Parameters<typeof Menu.buildFromTemplate>[0] = [
     {
@@ -76,6 +92,9 @@ function buildMenu(snapshot: AggregateSnapshot | null): Menu {
     },
     { type: "separator" },
   ];
+  if (snoozeLabel) {
+    template.push({ label: snoozeLabel, enabled: false }, { type: "separator" });
+  }
 
   if (items.length === 0) {
     template.push({ label: "No recent activity", enabled: false });
@@ -97,8 +116,9 @@ function buildMenu(snapshot: AggregateSnapshot | null): Menu {
       submenu: [
         { label: "For 1 hour", click: () => callbacks?.onSnooze(60) },
         { label: "For 8 hours", click: () => callbacks?.onSnooze(8 * 60) },
+        { label: "Until tomorrow morning", click: () => callbacks?.onSnooze(minutesUntilTomorrowMorning()) },
         { type: "separator" },
-        { label: "Clear snooze", click: () => callbacks?.onClearSnooze() },
+        { label: "Clear snooze", enabled: Boolean(snoozeLabel), click: () => callbacks?.onClearSnooze() },
       ],
     },
     { label: "Settings…", click: () => callbacks?.onOpenSettings() },
@@ -107,6 +127,16 @@ function buildMenu(snapshot: AggregateSnapshot | null): Menu {
   );
 
   return Menu.buildFromTemplate(template);
+}
+
+export function setTraySnooze(nextMutedUntil: string | undefined): void {
+  mutedUntil = nextMutedUntil;
+  if (!tray) return;
+  try {
+    tray.setContextMenu(buildMenu(lastSnapshot));
+  } catch (err) {
+    logger.warn("tray", "Failed to update tray snooze state", { err: String(err) });
+  }
 }
 
 function openItem(item: MonitorItem): void {
