@@ -19,6 +19,7 @@ const InsightsView = React.lazy(() => import("./insights-view").then((m) => ({ d
 const IncidentsView = React.lazy(() => import("./incidents-view").then((m) => ({ default: m.IncidentsView })));
 const TimelineView = React.lazy(() => import("./timeline-view").then((m) => ({ default: m.TimelineView })));
 const DashboardsView = React.lazy(() => import("./dashboards-view").then((m) => ({ default: m.DashboardsView })));
+const HelpView = React.lazy(() => import("./help-view").then((m) => ({ default: m.HelpView })));
 const UptimeView = React.lazy(() => import("./uptime-view").then((m) => ({ default: m.UptimeView })));
 
 function RouteFallback() {
@@ -140,6 +141,15 @@ const alertsRoute = createRoute({
   },
 });
 
+const helpRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/help",
+  component: withSuspense(HelpView),
+  staticData: {
+    title: "Help",
+  },
+});
+
 const routeTree = rootRoute.addChildren([
   commandCenterRoute,
   dashboardRoute,
@@ -151,6 +161,7 @@ const routeTree = rootRoute.addChildren([
   alertsRoute,
   dashboardsRoute,
   accountsRoute,
+  helpRoute,
 ]);
 
 const queryClient = new QueryClient();

@@ -155,6 +155,8 @@ async function main(): Promise<void> {
   const rootView = await readRepoFile("renderer/main/root-view.tsx");
   const commandCenterView = await readRepoFile("renderer/main/command-center-view.tsx");
   const commandPalette = await readRepoFile("renderer/main/components/command-palette.tsx");
+  const helpView = await readRepoFile("renderer/main/help-view.tsx");
+  const providersHook = await readRepoFile("renderer/main/hooks/use-providers.ts");
   const monitorDataHook = await readRepoFile("renderer/main/hooks/use-monitor-data.ts");
 
   check(registry.includes("secretField"), "registry.ts must expose secretField() for the token-store boundary");
@@ -324,6 +326,28 @@ async function main(): Promise<void> {
   check(router.includes("CommandCenterView") && router.includes('path: "/"') && router.includes('path: "/dashboard"'), "router.tsx must expose Command Center at / and preserve the live Dashboard at /dashboard");
   check(rootView.includes('label: "Command Center"') && rootView.includes('path: "/dashboard"'), "root-view.tsx must expose Command Center and the preserved Dashboard route");
   check(commandPalette.includes('label: "Command Center"') && commandPalette.includes('to: "/dashboard"'), "command-palette.tsx must expose Command Center and send dashboard item logs to /dashboard");
+  check(router.includes("HelpView") && router.includes('path: "/help"'), "router.tsx must expose the in-app Help route at /help");
+  check(rootView.includes('label: "Help"') && rootView.includes('path: "/help"') && rootView.includes("CircleHelp"), "root-view.tsx must expose Help from the sidebar with a ?/help icon");
+  check(commandPalette.includes('label: "Help"') && commandPalette.includes('go("/help")'), "command-palette.tsx must expose Help navigation");
+  checkIncludesAll(helpView, [
+    "Command Center",
+    "Detailed Dashboard",
+    "Apps cockpit",
+    "Insights and SLOs",
+    "Incident center",
+    "Correlation Timeline",
+    "Uptime checks",
+    "Alert rules",
+    "Custom Dashboards",
+    "Provider setup reference",
+    "Portable setup import and export",
+    "Settings, polling, retention, digest, and maintenance",
+    "Notification channels",
+    "Filters, presets, and exports",
+    "Common issues",
+  ], "help-view.tsx must document every main user-facing surface and setup/troubleshooting area");
+  check(helpView.includes("useProviders") && helpView.includes("provider.fields") && helpView.includes("ProviderReference") && providersHook.includes("monitorApi.listProviders") && rendererIpc.includes('"providers:list"'), "Help provider setup reference must be rendered from providers:list metadata instead of hardcoded credential copies");
+  check(agentsDoc.includes("user-facing functionality change") && agentsDoc.includes("in-app Help docs"), "AGENTS.md must require in-app Help docs updates for user-facing functionality changes");
   check(commandCenterView.includes("useMonitorData") && commandCenterView.includes("useHistoryEvents") && commandCenterView.includes("useRuleStates"), "command-center-view.tsx must summarize real monitor, retained-history, and alert-rule state");
   check(commandCenterView.includes("openFirstIssue") && commandCenterView.includes("accounts.select.v1") && commandCenterView.includes("uptime.drilldown.v1") && commandCenterView.includes("alerts.select.v1") && commandCenterView.includes("dashboard.item.select.v1") && commandCenterView.includes("incidents.drilldown.v1") && commandCenterView.includes("timeline.drilldown.v1"), "command-center-view.tsx must hand off suggested actions and issue rows to scoped destination views");
   check(commandCenterView.includes("const groupId = event.groupId ?? accountsById.get(event.accountId)?.groupId") && commandCenterView.includes("group: groupId ?? \"all\""), "command-center-view.tsx retained-history activity drilldowns must use account-derived group fallback");

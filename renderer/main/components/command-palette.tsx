@@ -31,6 +31,7 @@ const NAV_ITEMS: { path: string; label: string; shortcut: string }[] = [
   { path: "/alerts", label: "Alert rules", shortcut: "⌘8" },
   { path: "/dashboards", label: "Dashboards", shortcut: "⌘9" },
   { path: "/accounts", label: "Accounts", shortcut: "⌘0" },
+  { path: "/help", label: "Help", shortcut: "?" },
 ];
 
 const MAX_ITEMS = 25;
@@ -205,6 +206,10 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           <CommandItem value="action settings preferences notifications" onSelect={openSettings}>
             Open settings
             <CommandShortcut>⌘,</CommandShortcut>
+          </CommandItem>
+          <CommandItem value="action help docs documentation setup user guide provider token troubleshooting" onSelect={() => go("/help")}>
+            Open Help
+            <CommandShortcut>?</CommandShortcut>
           </CommandItem>
         </CommandGroup>
 

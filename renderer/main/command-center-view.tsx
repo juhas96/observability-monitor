@@ -146,7 +146,37 @@ function ProviderLabel({ account }: { account: Account }) {
   );
 }
 
-function SummaryCard({
+type Tone = "neutral" | "good" | "warn" | "bad";
+
+function toneTextClass(tone: Tone): string {
+  return tone === "bad" ? "text-red-500" : tone === "warn" ? "text-yellow-500" : tone === "good" ? "text-green-500" : "text-secondary";
+}
+
+function PanelShell({
+  title,
+  badge,
+  badgeColor = "secondary",
+  children,
+  className = "",
+}: {
+  title: string;
+  badge?: ReactNode;
+  badgeColor?: "secondary" | "red" | "yellow" | "green";
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <section className={`rounded-lg border border-separator bg-background/60 p-3 ${className}`}>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <Text variant="strong">{title}</Text>
+        {badge === undefined ? null : <Badge color={badgeColor}>{badge}</Badge>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function MetricTile({
   icon,
   label,
   value,
@@ -158,25 +188,25 @@ function SummaryCard({
   label: string;
   value: string;
   detail: string;
-  tone?: "neutral" | "good" | "warn" | "bad";
+  tone?: Tone;
   onClick?: () => void;
 }) {
   const toneClass = tone === "bad" ? "text-red-500" : tone === "warn" ? "text-yellow-500" : tone === "good" ? "text-green-500" : "text-secondary";
   const content = (
     <>
-      <div className={`mb-3 flex items-center gap-2 ${toneClass}`}>
+      <div className={`mb-2 flex items-center gap-2 ${toneClass}`}>
         {icon}
         <Text variant="small" color="secondary">{label}</Text>
       </div>
-      <div className="text-3xl font-semibold tracking-normal text-primary tabular-nums">{value}</div>
+      <div className="text-2xl font-semibold tracking-normal text-primary tabular-nums">{value}</div>
       <Text variant="small" color="tertiary" className="mt-1">{detail}</Text>
     </>
   );
   if (!onClick) {
-    return <div className="rounded-lg border border-separator bg-background/60 p-4">{content}</div>;
+    return <div className="min-h-28 rounded-lg border border-separator bg-control-subtle p-3">{content}</div>;
   }
   return (
-    <button className="rounded-lg border border-separator bg-background/60 p-4 text-left transition hover:bg-secondary/40" onClick={onClick}>
+    <button className="min-h-28 rounded-lg border border-separator bg-control-subtle p-3 text-left transition hover:bg-control-hover focus:outline-none focus:ring-2 focus:ring-accent" onClick={onClick}>
       {content}
     </button>
   );
@@ -196,7 +226,7 @@ function ActionRow({
   onClick: () => void;
 }) {
   return (
-    <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left first:border-t-0" onClick={onClick}>
+    <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left transition first:border-t-0 hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent" onClick={onClick}>
       <span className="text-secondary">{icon}</span>
       <span className="min-w-0">
         <Text variant="strong" className="block truncate">{title}</Text>
@@ -221,7 +251,7 @@ function IssueRow({
     <div
       role="button"
       tabIndex={0}
-      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left first:border-t-0"
+      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left transition first:border-t-0 hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent"
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -259,7 +289,7 @@ function IncidentRow({ item, account, onSelect }: { item: ObservabilityIncident 
     <div
       role="button"
       tabIndex={0}
-      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left first:border-t-0"
+      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left transition first:border-t-0 hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent"
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -297,7 +327,7 @@ function ActivityRow({ event, account, onSelect }: { event: HistoryEvent; accoun
     <div
       role="button"
       tabIndex={0}
-      className="grid grid-cols-[6rem_auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-2 text-left first:border-t-0"
+      className="grid grid-cols-[6rem_auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-2 text-left transition first:border-t-0 hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent"
       onClick={onSelect}
       onKeyDown={(keyboardEvent) => {
         if (keyboardEvent.key === "Enter" || keyboardEvent.key === " ") {
@@ -334,7 +364,7 @@ function DownCheckRow({ check, onSelect }: { check: HttpCheckResult; onSelect: (
     <div
       role="button"
       tabIndex={0}
-      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left first:border-t-0"
+      className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left transition first:border-t-0 hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent"
       onClick={onSelect}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
@@ -362,7 +392,7 @@ function DownCheckRow({ check, onSelect }: { check: HttpCheckResult; onSelect: (
 
 function AlertRuleRow({ rule, state, scopeLabel, onSelect }: { rule: AlertRule; state?: RuleState; scopeLabel: string; onSelect: () => void }) {
   return (
-    <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left first:border-t-0" onClick={onSelect}>
+    <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left transition first:border-t-0 hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent" onClick={onSelect}>
       <BellPlus className="size-4 text-red-500" />
       <span className="min-w-0">
         <span className="flex min-w-0 items-center gap-2">
@@ -385,7 +415,7 @@ function SloRiskRow({ status, account, onSelect }: { status: SloStatus; account?
     ?? (status.slo.scope.groupId ? `Group ${status.slo.scope.groupId}` : "All monitored providers");
   const attempts = status.successCount + status.failureCount;
   return (
-    <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left first:border-t-0" onClick={onSelect}>
+    <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left transition first:border-t-0 hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent" onClick={onSelect}>
       <Target className="size-4 text-red-500" />
       <span className="min-w-0">
         <span className="flex min-w-0 items-center gap-2">
@@ -424,11 +454,7 @@ function SuppressionStatus({
   const suppressed = mutedActive || activeWindows.length > 0 || activeRuleSnoozes.length > 0;
   const visibleRuleSnoozes = activeRuleSnoozes.slice(0, 4);
   return (
-    <section className="rounded-lg border border-separator bg-background/60 p-4">
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <Text variant="strong">Notification suppression</Text>
-        <Badge color={suppressed ? "yellow" : "secondary"}>{loading ? "Loading" : suppressed ? "Active" : "Clear"}</Badge>
-      </div>
+    <PanelShell title="Notification suppression" badge={loading ? "Loading" : suppressed ? "Active" : "Clear"} badgeColor={suppressed ? "yellow" : "secondary"}>
       {loading ? (
         <Text variant="small" color="tertiary">Loading suppression state…</Text>
       ) : !suppressed ? (
@@ -477,7 +503,7 @@ function SuppressionStatus({
       <Button variant="transparent" size="small" className="mt-3" onClick={onOpenSettings}>
         Open settings
       </Button>
-    </section>
+    </PanelShell>
   );
 }
 
@@ -774,6 +800,12 @@ export function CommandCenterView() {
     void navigate({ to: "/alerts" });
   };
 
+  const aggregateTone: Tone = snapshot?.aggregateStatus === "failure" ? "bad" : snapshot?.aggregateStatus === "warning" ? "warn" : snapshot?.aggregateStatus === "success" ? "good" : "neutral";
+  const issueTone: Tone = issueCount === 0 ? "good" : "bad";
+  const aggregateStatus = snapshot?.aggregateStatus ?? "unknown";
+  const aggregateFreshness = snapshot?.generatedAt ? `Updated ${formatRelativeTime(snapshot.generatedAt)}` : "Waiting for first snapshot";
+  const primaryHealthAction = issueCount === 0 ? () => void navigate({ to: "/dashboard" }) : openFirstIssue;
+
   return (
     <ScrollArea
       title="Command Center"
@@ -795,7 +827,7 @@ export function CommandCenterView() {
       }
       className="h-full"
     >
-      <div className="px-2 pb-8 space-y-6">
+      <div className="space-y-4 px-2 pb-8">
         {snapshotQuery.error ? (
           <Callout color="red">{snapshotQuery.error instanceof Error ? snapshotQuery.error.message : String(snapshotQuery.error)}</Callout>
         ) : null}
@@ -811,62 +843,86 @@ export function CommandCenterView() {
           />
         ) : null}
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard
-            icon={issueCount === 0 ? <CheckCircle2 className="size-4" /> : <AlertTriangle className="size-4" />}
-            label="Current issues"
-            value={formatNumber(issueCount)}
-            detail={issueCount === 0 ? "No active issues in the latest snapshot" : "Failures, warnings, incidents, alerts, SLO risk, down checks, or sync errors"}
-            tone={issueCount === 0 ? "good" : "bad"}
-            onClick={issueCount === 0 ? () => void navigate({ to: "/dashboard" }) : openFirstIssue}
-          />
-          <SummaryCard
-            icon={<Plug className="size-4" />}
-            label="Enabled accounts"
-            value={formatNumber(enabledAccounts.length)}
-            detail={`${accounts.length} configured provider accounts`}
-            tone={allAccountsWithErrors.length > 0 || allStaleAccounts.length > 0 ? "warn" : "neutral"}
-            onClick={() => void navigate({ to: "/accounts" })}
-          />
-          <SummaryCard
-            icon={<Siren className="size-4" />}
-            label="Active incidents"
-            value={formatNumber(allActiveIncidents.length)}
-            detail={`${snapshot?.signals.length ?? 0} live signals in the current snapshot`}
-            tone={allActiveIncidents.length > 0 ? "bad" : "good"}
-            onClick={firstActiveIncident ? () => openIncident(firstActiveIncident) : () => void navigate({ to: "/incidents" })}
-          />
-          <SummaryCard
-            icon={<Target className="size-4" />}
-            label="SLO risk"
-            value={allSloStatuses.length === 0 ? "0" : `${formatNumber(allAtRiskSlos.length)}/${formatNumber(allSloStatuses.length)}`}
-            detail={firstAtRiskSlo ? `${firstAtRiskSlo.slo.name} budget ${formatPercent(firstAtRiskSlo.remainingBudget)}` : allSloStatuses.length === 0 ? "No SLOs configured yet" : "No SLOs currently at risk"}
-            tone={allAtRiskSlos.length > 0 ? "bad" : allSloStatuses.length > 0 ? "good" : "neutral"}
-            onClick={() => openInsightsForSlo(firstAtRiskSlo)}
-          />
-          <SummaryCard
-            icon={<Gauge className="size-4" />}
-            label="Aggregate status"
-            value={snapshot?.aggregateStatus ?? "unknown"}
-            detail={snapshot?.generatedAt ? `Updated ${formatRelativeTime(snapshot.generatedAt)}` : "Waiting for first snapshot"}
-            tone={snapshot?.aggregateStatus === "failure" ? "bad" : snapshot?.aggregateStatus === "warning" ? "warn" : snapshot?.aggregateStatus === "success" ? "good" : "neutral"}
-            onClick={() => void navigate({ to: "/dashboard" })}
-          />
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(20rem,1.05fr)_minmax(0,2fr)]">
+          <section className="rounded-lg border border-separator bg-background/60 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className={`flex min-w-0 items-center gap-2 ${toneTextClass(aggregateTone)}`}>
+                <Gauge className="size-4 shrink-0" />
+                <Text variant="strong" className="truncate">System health</Text>
+              </div>
+              <Badge color={aggregateTone === "bad" ? "red" : aggregateTone === "warn" ? "yellow" : aggregateTone === "good" ? "green" : "secondary"}>
+                {aggregateStatus}
+              </Badge>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+              <div className="min-w-0">
+                <Text variant="small" color="tertiary">Aggregate status</Text>
+                <div className="mt-1 truncate text-4xl font-semibold tracking-normal text-primary">{aggregateStatus}</div>
+                <Text variant="small" color="tertiary" className="mt-1">{aggregateFreshness}</Text>
+              </div>
+              <div className="rounded-lg border border-separator bg-control-subtle p-3 text-left sm:min-w-36">
+                <div className={`flex items-center gap-2 ${toneTextClass(issueTone)}`}>
+                  {issueCount === 0 ? <CheckCircle2 className="size-4" /> : <AlertTriangle className="size-4" />}
+                  <Text variant="small" color="secondary">Current issues</Text>
+                </div>
+                <div className="mt-2 text-3xl font-semibold tracking-normal text-primary tabular-nums">{formatNumber(issueCount)}</div>
+              </div>
+            </div>
+
+            <Text variant="small" color="tertiary" className="mt-3 block">
+              {issueCount === 0 ? "No active issues in the latest snapshot." : "Failures, warnings, incidents, alerts, SLO risk, down checks, or sync errors need review."}
+            </Text>
+            <Button variant={issueCount === 0 ? "glass" : "accent"} size="small" className="mt-4" onClick={primaryHealthAction}>
+              {issueCount === 0 ? "Open dashboard" : "Review first issue"}
+            </Button>
+          </section>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <MetricTile
+              icon={<Plug className="size-4" />}
+              label="Enabled accounts"
+              value={formatNumber(enabledAccounts.length)}
+              detail={`${accounts.length} configured provider accounts`}
+              tone={allAccountsWithErrors.length > 0 || allStaleAccounts.length > 0 ? "warn" : "neutral"}
+              onClick={() => void navigate({ to: "/accounts" })}
+            />
+            <MetricTile
+              icon={<Siren className="size-4" />}
+              label="Active incidents"
+              value={formatNumber(allActiveIncidents.length)}
+              detail={`${snapshot?.signals.length ?? 0} live signals in the current snapshot`}
+              tone={allActiveIncidents.length > 0 ? "bad" : "good"}
+              onClick={firstActiveIncident ? () => openIncident(firstActiveIncident) : () => void navigate({ to: "/incidents" })}
+            />
+            <MetricTile
+              icon={<Target className="size-4" />}
+              label="SLO risk"
+              value={allSloStatuses.length === 0 ? "0" : `${formatNumber(allAtRiskSlos.length)}/${formatNumber(allSloStatuses.length)}`}
+              detail={firstAtRiskSlo ? `${firstAtRiskSlo.slo.name} budget ${formatPercent(firstAtRiskSlo.remainingBudget)}` : allSloStatuses.length === 0 ? "No SLOs configured yet" : "No SLOs currently at risk"}
+              tone={allAtRiskSlos.length > 0 ? "bad" : allSloStatuses.length > 0 ? "good" : "neutral"}
+              onClick={() => openInsightsForSlo(firstAtRiskSlo)}
+            />
+            <MetricTile
+              icon={<AlertTriangle className="size-4" />}
+              label="Live rows"
+              value={formatNumber(liveAttentionCount)}
+              detail="Provider rows or uptime checks needing attention"
+              tone={liveAttentionCount > 0 ? "bad" : "good"}
+              onClick={liveAttentionCount > 0 ? openFirstIssue : () => void navigate({ to: "/dashboard" })}
+            />
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 2xl:grid-cols-[minmax(22rem,28rem)_1fr]">
-          <div className="space-y-6">
-            <section className="rounded-lg border border-separator bg-background/60 p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <Text variant="strong">Suggested next actions</Text>
-                <Badge color="secondary">{actions.length}</Badge>
-              </div>
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(18rem,22rem)_minmax(0,1fr)_minmax(18rem,24rem)]">
+          <div className="space-y-4">
+            <PanelShell title="Suggested next actions" badge={actions.length}>
               {actions.length === 0 ? (
                 <Callout color="green">No immediate setup or triage actions are needed.</Callout>
               ) : (
                 actions.map((action) => <ActionRow key={action.title} {...action} />)
               )}
-            </section>
+            </PanelShell>
 
             <SuppressionStatus
               mutedUntil={settings?.mutedUntil}
@@ -879,11 +935,7 @@ export function CommandCenterView() {
               onOpenRule={openAlertRule}
             />
 
-            <section className="rounded-lg border border-separator bg-background/60 p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <Text variant="strong">Account attention</Text>
-                <Badge color="secondary">{attentionCount}</Badge>
-              </div>
+            <PanelShell title="Account attention" badge={attentionCount}>
               {attentionCount === 0 ? (
                 <Text variant="small" color="tertiary">No sync errors or stale account warnings in the latest snapshot.</Text>
               ) : (
@@ -892,7 +944,7 @@ export function CommandCenterView() {
                     const status = snapshot?.perAccount[account.id];
                     const stale = snapshot?.staleness[account.id];
                     return (
-                      <button key={account.id} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left first:border-t-0" onClick={() => openAccount(account)}>
+                      <button key={account.id} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-3 text-left transition first:border-t-0 hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent" onClick={() => openAccount(account)}>
                         <span className="min-w-0">
                           <Text variant="strong" className="block truncate">{account.label}</Text>
                           <Text variant="small" color="tertiary" className="block truncate">
@@ -910,15 +962,11 @@ export function CommandCenterView() {
                   ) : null}
                 </>
               )}
-            </section>
+            </PanelShell>
           </div>
 
-          <div className="space-y-6">
-            <section className="rounded-lg border border-separator bg-background/60 p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <Text variant="strong">What needs attention</Text>
-                <Badge color="secondary">{liveAttentionCount}</Badge>
-              </div>
+          <div>
+            <PanelShell title="What needs attention" badge={liveAttentionCount} className="xl:min-h-full">
               {liveAttentionCount === 0 ? (
                 <EmptyState title="No failing live rows" description="The latest provider snapshot and uptime checks do not contain active failures." />
               ) : (
@@ -933,13 +981,11 @@ export function CommandCenterView() {
                   ) : null}
                 </>
               )}
-            </section>
+            </PanelShell>
+          </div>
 
-            <section className="rounded-lg border border-separator bg-background/60 p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <Text variant="strong">Firing alert rules</Text>
-                <Badge color="secondary">{allFiringRules.length}</Badge>
-              </div>
+          <div className="space-y-4">
+            <PanelShell title="Firing alert rules" badge={allFiringRules.length}>
               {ruleStatesQuery.isLoading || rulesQuery.isLoading ? (
                 <Text variant="small" color="tertiary">Loading alert-rule state…</Text>
               ) : allFiringRules.length === 0 ? (
@@ -962,13 +1008,9 @@ export function CommandCenterView() {
                   ) : null}
                 </>
               )}
-            </section>
+            </PanelShell>
 
-            <section className="rounded-lg border border-separator bg-background/60 p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <Text variant="strong">SLOs at risk</Text>
-                <Badge color="secondary">{allAtRiskSlos.length}</Badge>
-              </div>
+            <PanelShell title="SLOs at risk" badge={allAtRiskSlos.length}>
               {sloStatusQuery.isLoading ? (
                 <Text variant="small" color="tertiary">Loading SLO status…</Text>
               ) : allAtRiskSlos.length === 0 ? (
@@ -990,13 +1032,9 @@ export function CommandCenterView() {
                   ) : null}
                 </>
               )}
-            </section>
+            </PanelShell>
 
-            <section className="rounded-lg border border-separator bg-background/60 p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <Text variant="strong">Active incident queue</Text>
-                <Badge color="secondary">{allActiveIncidents.length}</Badge>
-              </div>
+            <PanelShell title="Active incident queue" badge={allActiveIncidents.length}>
               {allActiveIncidents.length === 0 ? (
                 <Text variant="small" color="tertiary">No open live or local incidents.</Text>
               ) : (
@@ -1016,13 +1054,9 @@ export function CommandCenterView() {
                   ) : null}
                 </>
               )}
-            </section>
+            </PanelShell>
 
-            <section className="rounded-lg border border-separator bg-background/60 p-4">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <Text variant="strong">Retained activity, 24h</Text>
-                <Badge color="secondary">{allRecentActivity.length}</Badge>
-              </div>
+            <PanelShell title="Retained activity, 24h" badge={allRecentActivity.length}>
               {historyEventsQuery.isLoading ? (
                 <Text variant="small" color="tertiary">Loading retained activity…</Text>
               ) : allRecentActivity.length === 0 ? (
@@ -1044,7 +1078,7 @@ export function CommandCenterView() {
                   ) : null}
                 </>
               )}
-            </section>
+            </PanelShell>
           </div>
         </div>
       </div>

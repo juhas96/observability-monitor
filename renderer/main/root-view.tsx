@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as React from "react";
-import { BellPlus, Gauge, GitCommitHorizontal, LayoutDashboard, LineChart, PanelsTopLeft, Plug, Radio, Siren } from "lucide-react";
+import { BellPlus, CircleHelp, Gauge, GitCommitHorizontal, LayoutDashboard, LineChart, PanelsTopLeft, Plug, Radio, Siren } from "lucide-react";
 import { SplitView, Sidebar, SidebarList, SidebarListItem, Status } from "@glaze/core/components";
 import { useTheme, useConnection, useEnvironment } from "@glaze/core/hooks";
 import { CommandPalette } from "./components/command-palette";
@@ -9,7 +9,7 @@ interface NavItem {
   path: string;
   label: string;
   icon: React.ReactNode;
-  shortcut: string;
+  shortcut?: string;
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -23,6 +23,7 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/alerts", label: "Alert rules", icon: <BellPlus className="size-4" />, shortcut: "8" },
   { path: "/dashboards", label: "Dashboards", icon: <LayoutDashboard className="size-4" />, shortcut: "9" },
   { path: "/accounts", label: "Accounts", icon: <Plug className="size-4" />, shortcut: "0" },
+  { path: "/help", label: "Help", icon: <CircleHelp className="size-4" /> },
 ];
 
 function isEditableTarget(target: EventTarget | null): boolean {
