@@ -29,6 +29,7 @@ import {
   useStoredState,
 } from "./components/filters";
 import { LogViewerDialog } from "./components/log-viewer-dialog";
+import { openInvestigation } from "./components/investigation";
 import { formatRelativeTime } from "./components/relative-time";
 import { providerIcon, providerLabel } from "./components/provider-meta";
 import { useMonitorData } from "./hooks/use-monitor-data";
@@ -49,7 +50,6 @@ const FILTER_KEY = "dashboard.filters.v2";
 const FILTER_PRESET_KEY = `${FILTER_KEY}.presets`;
 const DASHBOARD_ITEM_SELECT_EVENT = "dashboard:item-select";
 const DASHBOARD_ITEM_SELECT_KEY = "dashboard.item.select.v1";
-const INCIDENT_CREATE_KEY = "incidents.create.v1";
 const ALERT_RULE_DRAFT_KEY = "alerts.draft.v1";
 
 interface DashboardFilters {
@@ -305,18 +305,18 @@ function EventRow({
   const Icon = providerIcon(event.provider);
   const canCreateAlertRule = event.type === "alert" || event.type === "incident" || event.type === "failure";
   return (
-    <div className="grid grid-cols-[7rem_1fr_auto] gap-3 py-2 border-t border-separator first:border-t-0 items-center">
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-separator py-2 first:border-t-0 sm:grid-cols-[7rem_minmax(0,1fr)_auto]">
       <Text variant="small" color="tertiary" className="tabular-nums">{formatRelativeTime(event.ts)}</Text>
-      <div className="min-w-0 flex items-center gap-2">
-        <Icon className="size-4 text-tertiary shrink-0" />
+      <div className="flex min-w-0 items-center gap-2">
+        <Icon className="size-4 shrink-0 text-tertiary" />
         <div className="min-w-0">
-          <Text variant="strong" truncate>{event.title}</Text>
-          <Text variant="small" color="secondary" truncate>
+          <Text variant="strong" truncate className="block">{event.title}</Text>
+          <Text variant="small" color="secondary" truncate className="block">
             {account?.label ?? providerLabel(event.provider)} · {event.type} · {event.status}
           </Text>
         </div>
       </div>
-      <div className="flex items-center gap-1">
+      <div className="col-start-2 flex items-center justify-end gap-1 sm:col-start-auto">
         <Button variant="transparent" size="small" iconOnly aria-label="Start investigation" title="Start investigation" onClick={() => onInvestigate(event)}>
           <Search className="size-4" />
         </Button>
@@ -364,8 +364,7 @@ export function DashboardView() {
   };
 
   const handleInvestigate = (item: MonitorItem) => {
-    localStorage.setItem(INCIDENT_CREATE_KEY, JSON.stringify({ monitorItem: item }));
-    void navigate({ to: "/incidents" });
+    openInvestigation({ kind: "item", itemUid: item.uid, accountId: item.accountId, provider: item.provider, title: item.title, subtitle: item.subtitle, ts: item.updatedAt, url: item.url });
   };
 
   const handleRefresh = async () => {
@@ -425,8 +424,7 @@ export function DashboardView() {
     void navigate({ to: "/alerts" });
   };
   const handleInvestigateEvent = (event: HistoryEvent) => {
-    localStorage.setItem(INCIDENT_CREATE_KEY, JSON.stringify({ event }));
-    void navigate({ to: "/incidents" });
+    openInvestigation({ kind: "event", eventId: event.id, accountId: event.accountId, provider: event.provider, groupId: event.groupId, title: event.title, ts: event.ts, url: event.url });
   };
   const handleCreateAlertRuleFromEvent = (event: HistoryEvent) => {
     const draft = alertRuleDraftFromHistoryEvent(event, accountsById.get(event.accountId));

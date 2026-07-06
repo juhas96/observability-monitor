@@ -15,6 +15,7 @@ import { registerDashboardHandlers } from "./dashboards.js";
 import { registerDiagnosticHandlers } from "./diagnostics.js";
 import { registerGrafanaHandlers } from "./grafana.js";
 import { registerHistoryHandlers } from "./history.js";
+import { registerInvestigationHandlers } from "./investigation.js";
 import { registerLocalIncidentHandlers } from "./local-incidents.js";
 import { registerMonitorHandlers } from "./monitor.js";
 import { registerProviderHandlers } from "./providers.js";
@@ -65,6 +66,7 @@ export function registerHandlers(): void {
   registerDiagnosticHandlers();
   registerGrafanaHandlers();
   registerHistoryHandlers();
+  registerInvestigationHandlers();
   registerLocalIncidentHandlers();
   registerMonitorHandlers();
   registerProviderHandlers();

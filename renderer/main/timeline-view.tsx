@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Bell, Download, ExternalLink, Plus } from "lucide-react";
+import { Bell, Download, ExternalLink, Plus, Search } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Badge,
@@ -25,6 +25,7 @@ import {
 import type { TooltipContentProps } from "recharts";
 
 import { formatRelativeTime } from "./components/relative-time";
+import { openInvestigation } from "./components/investigation";
 import {
   ALL,
   CATEGORY_FILTER_OPTIONS,
@@ -388,6 +389,7 @@ function EventRow({ event, account }: { event: HistoryEvent; account: Account | 
     localStorage.setItem(INCIDENT_CREATE_KEY, JSON.stringify({ event }));
     void navigate({ to: "/incidents" });
   };
+  const investigate = () => openInvestigation({ kind: "event", eventId: event.id, accountId: event.accountId, provider: event.provider, groupId: event.groupId, title: event.title, ts: event.ts, url: event.url });
   const createAlertRule = () => {
     if (!alertDraft) return;
     localStorage.setItem(ALERT_RULE_DRAFT_KEY, JSON.stringify(alertDraft));
@@ -405,6 +407,9 @@ function EventRow({ event, account }: { event: HistoryEvent; account: Account | 
         </div>
       </div>
       <div className="flex items-center gap-1">
+        <Button variant="transparent" size="small" iconOnly aria-label="Investigate event" title="Investigate event" onClick={investigate}>
+          <Search className="size-4" />
+        </Button>
         <Button variant="transparent" size="small" iconOnly aria-label="Create incident from event" title="Create incident from event" onClick={createIncident}>
           <Plus className="size-4" />
         </Button>

@@ -64,10 +64,11 @@ const HELP_ARTICLES: HelpArticle[] = [
     steps: [
       { title: "Read the provider hint", body: "Each provider declares its required scopes and fields. The add-account dialog is generated from the provider registry." },
       { title: "Separate secrets from configuration", body: "Secret fields are saved through encrypted storage. Non-secret fields such as account ids, project refs, regions, filters, or URLs are saved as local account metadata." },
+      { title: "Choose collection areas", body: "Core account health runs when the account is enabled. Advanced areas such as logs, traces, metrics, dashboards, annotations, data-source health, and live query panels run only when the provider declares and you configure that area." },
       { title: "Validate before enabling workflows", body: "Use Test connection when creating or editing an account, then use Run on account diagnostics if a token, permission, rate limit, or provider error appears later." },
       { title: "Refresh intentionally", body: "Use single-account refresh for one integration or Refresh all from the command palette when you need a fresh snapshot across providers." },
     ],
-    outputs: ["Encrypted credential entry", "Non-secret account config", "Account identity", "Last sync and stale-state diagnostics"],
+    outputs: ["Encrypted credential entry", "Non-secret account config", "Account identity", "Collection-area diagnostics", "Last sync and stale-state diagnostics"],
     gotchas: ["Leave a secret field blank while editing to keep the current stored secret.", "Do not paste provider tokens into notes, dashboard queries, docs, localStorage, or JSON files."],
     keywords: ["provider", "credential", "secret", "safeStorage", "token", "account", "refresh"],
   },
@@ -213,13 +214,13 @@ const HELP_ARTICLES: HelpArticle[] = [
     summary: "Build persistent local and live provider dashboards.",
     route: "/dashboards",
     steps: [
-      { title: "Create from scratch or template", body: "Create dashboards manually or from templates, then add panels for local monitor history, uptime checks, snapshot stats, retained events, or provider-declared live query capabilities." },
+      { title: "Create from scratch or template", body: "Create dashboards manually or from investigation starter templates for service health, incidents, deploy correlation, provider reliability, uptime/SLOs, ownership, and configured Grafana logs/traces." },
       { title: "Configure panels", body: "Choose visualization, width, height, range override, refresh override, source scope, default panel, custom query, provider params, and x/y mappings where applicable." },
       { title: "Use variables and runtime filters", body: "Dashboard variables persist non-secret defaults for group, provider, account, check, owner, tier, and dependency. Runtime filters temporarily override local panels unless a panel has a narrower explicit scope." },
-      { title: "Import, export, and copy", body: "Export dashboards without secrets, import compatible dashboards, duplicate dashboards, and copy panels between dashboards." },
+      { title: "Import, export, and copy", body: "Use the More menu to refresh panels, edit, duplicate, export, import, and open templates. Dashboard exports never include secrets, and panels can be copied between dashboards." },
     ],
     outputs: ["Timeseries, stat, table, log, trace, and event panels", "Row links", "Panel CSV export", "Dashboard JSON export"],
-    gotchas: ["Live provider panels never receive dashboard runtime filters; they use their configured account, capability, params, and query.", "Custom SQL or HogQL panels are read-only, SELECT-only, semicolon-free, and capped by provider limits."],
+    gotchas: ["Live provider panels never receive dashboard runtime filters; they use their configured account, capability, params, and query.", "Configured-only provider areas must be enabled on the account before live log, trace, metric, dashboard, or data-source panels are discovered.", "Custom SQL or HogQL panels are read-only, SELECT-only, semicolon-free, and capped by provider limits."],
     keywords: ["dashboards", "panels", "recharts", "provider query", "variables", "import", "export"],
   },
   {
@@ -304,6 +305,7 @@ function providerSearchText(provider: ProviderInfo): string {
     provider.label,
     provider.scopeHint,
     ...provider.fields.flatMap((field) => [field.label, field.key, field.placeholder ?? "", field.required ? "required" : "optional", field.secret ? "secret token credential" : "non-secret config"]),
+    ...provider.collectionAreas.flatMap((area) => [area.label, area.category, area.defaultState, area.guidance]),
   ].join(" ");
 }
 
@@ -343,6 +345,18 @@ function ProviderReference({ providers }: { providers: ProviderInfo[] }) {
                 <div className="mt-3 grid grid-cols-1 gap-2">
                   <FieldList title="Required" fields={requiredFields} />
                   <FieldList title="Optional" fields={optionalFields} empty="No optional fields" />
+                  {provider.collectionAreas.length > 0 ? (
+                    <div>
+                      <Text variant="small" color="tertiary">Collection areas</Text>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {provider.collectionAreas.map((area) => (
+                          <Badge key={area.id} color={area.defaultState === "always" ? "blue" : "secondary"}>
+                            {area.label}: {area.defaultState}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </article>
             );

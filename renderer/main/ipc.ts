@@ -25,6 +25,8 @@ import type {
   HistoryRange,
   HistorySample,
   HistoryStats,
+  InvestigationContext,
+  InvestigationTrigger,
   LocalIncident,
   LocalIncidentInput,
   LocalIncidentStatus,
@@ -78,6 +80,7 @@ export const monitorApi = {
   getStatus: () => invoke<MonitorStatus>("monitor:getStatus"),
   openExternal: (url: string) => invoke<{ ok: true }>("monitor:openExternal", { url }),
   openSettings: () => invoke<void>("window:openSettings"),
+  getInvestigationContext: (req: Partial<InvestigationTrigger>) => invoke<InvestigationContext>("investigation:getContext", req),
 
   listDashboards: () => invoke<DashboardDefinition[]>("dashboards:list"),
   saveDashboard: (req: DashboardInput) => invoke<DashboardDefinition>("dashboards:save", req),

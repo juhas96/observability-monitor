@@ -170,6 +170,22 @@ function dashboardCapabilityDetail(diagnostic: AccountDiagnostic): string {
   return summary.unavailableReason ?? "Run diagnostics to load live dashboard capabilities";
 }
 
+function collectionAreaSummary(diagnostic: AccountDiagnostic): string {
+  const areas = diagnostic.collectionAreas ?? [];
+  if (areas.length === 0) return "Collection areas unavailable";
+  const active = areas.filter((area) => area.status === "always-on" || area.status === "enabled").length;
+  const configured = areas.filter((area) => area.defaultState === "configured").length;
+  return `${active}/${areas.length} collection areas active${configured ? ` · ${configured} configured-only` : ""}`;
+}
+
+function collectionAreaColor(status: AccountDiagnostic["collectionAreas"][number]["status"]): "green" | "yellow" | "red" | "secondary" | "blue" {
+  if (status === "always-on") return "blue";
+  if (status === "enabled") return "green";
+  if (status === "missing-config") return "yellow";
+  if (status === "unavailable") return "red";
+  return "secondary";
+}
+
 function downloadAccountsCsv(accounts: Account[], diagnosticsById: Map<string, AccountDiagnostic>, groupsById: Map<string, ProjectGroup>): void {
   const columns = [
     "id",
@@ -201,6 +217,7 @@ function downloadAccountsCsv(accounts: Account[], diagnosticsById: Map<string, A
     "dashboardQueryLanguages",
     "dashboardResultKinds",
     "dashboardUnavailableReason",
+    "collectionAreas",
     "createdAt",
   ];
   const rows = accounts.map((account) => {
@@ -237,6 +254,7 @@ function downloadAccountsCsv(accounts: Account[], diagnosticsById: Map<string, A
       dashboard?.queryLanguages.join("; ") ?? "",
       dashboard?.resultKinds.join("; ") ?? "",
       dashboard?.unavailableReason ?? dashboard?.error ?? "",
+      diagnostic?.collectionAreas.map((area) => `${area.label}:${area.status}`).join("; ") ?? "",
       account.createdAt,
     ];
   });
@@ -331,6 +349,7 @@ function DiagnosticsPanel({
               <Text variant="strong" truncate>{diagnostic.label}</Text>
               <Text variant="small" color="secondary" truncate>{diagnosticDetail(diagnostic)}</Text>
               <Text variant="small" color="tertiary" truncate>{dashboardCapabilityDetail(diagnostic)}</Text>
+              <Text variant="small" color="tertiary" truncate>{collectionAreaSummary(diagnostic)}</Text>
               {diagnostic.dashboardCapabilities?.available ? (
                 <div className="flex flex-wrap gap-1 mt-1">
                   <Badge color="blue">{diagnostic.dashboardCapabilities.defaultPanelCount} defaults</Badge>
@@ -346,6 +365,14 @@ function DiagnosticsPanel({
                   {diagnostic.dashboardCapabilities.resultKinds.slice(0, 3).map((kind) => (
                     <Badge key={kind} color="secondary">{kind}</Badge>
                   ))}
+                </div>
+              ) : null}
+              {diagnostic.collectionAreas.length > 0 ? (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {diagnostic.collectionAreas.slice(0, 6).map((area) => (
+                    <Badge key={area.id} color={collectionAreaColor(area.status)}>{area.label}: {area.status}</Badge>
+                  ))}
+                  {diagnostic.collectionAreas.length > 6 ? <Badge color="secondary">+{diagnostic.collectionAreas.length - 6} more</Badge> : null}
                 </div>
               ) : null}
             </div>
@@ -539,7 +566,7 @@ function ProviderCapabilityMatrix({
         </div>
       </div>
       <div className="overflow-auto rounded-md border border-separator">
-        <table className="w-full min-w-[760px] text-left text-sm">
+        <table className="w-full min-w-[880px] text-left text-sm">
           <thead className="bg-control-subtle text-tertiary">
             <tr>
               <th className="px-3 py-2 font-medium">Provider</th>
@@ -547,6 +574,7 @@ function ProviderCapabilityMatrix({
               <th className="px-3 py-2 font-medium">Diagnostics</th>
               <th className="px-3 py-2 font-medium">Local panels</th>
               <th className="px-3 py-2 font-medium">Live dashboards</th>
+              <th className="px-3 py-2 font-medium">Collection</th>
               <th className="px-3 py-2 font-medium">Defaults</th>
               <th className="px-3 py-2 font-medium text-right">Actions</th>
             </tr>
@@ -605,6 +633,14 @@ function ProviderCapabilityMatrix({
                       {resultKinds.length > 0 ? (
                         <Text variant="small" color="tertiary" truncate>{resultKinds.join(", ")}</Text>
                       ) : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 align-top">
+                    <div className="flex flex-wrap gap-1">
+                      {(provider.collectionAreas ?? []).slice(0, 4).map((area) => (
+                        <Badge key={area.id} color={area.defaultState === "always" ? "blue" : "secondary"}>{area.label}</Badge>
+                      ))}
+                      {(provider.collectionAreas ?? []).length > 4 ? <Badge color="secondary">+{(provider.collectionAreas ?? []).length - 4}</Badge> : null}
                     </div>
                   </td>
                   <td className="px-3 py-2 align-top">

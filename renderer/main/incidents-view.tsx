@@ -524,12 +524,12 @@ function InvestigationHints({ hints }: { hints: CorrelationHint[] }) {
       ) : (
         <div className="flex flex-col">
           {hints.map(({ event, reason }) => (
-            <div key={event.id} className="grid grid-cols-[6rem_5rem_1fr_auto] gap-3 py-2 border-t border-separator first:border-t-0 items-center">
+            <div key={event.id} className="grid grid-cols-[6rem_5rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-2 first:border-t-0">
               <Text variant="small" color="tertiary" className="tabular-nums">{formatRelativeTime(event.ts)}</Text>
               <Badge color={event.type === "failure" || event.type === "incident" ? "red" : event.type === "deploy" ? "yellow" : "secondary"}>{eventIcon(event)}</Badge>
               <div className="min-w-0">
-                <Text variant="small" truncate>{event.title}</Text>
-                <Text variant="small" color="tertiary" truncate>{reason}</Text>
+                <Text variant="small" truncate className="block">{event.title}</Text>
+                <Text variant="small" color="tertiary" truncate className="block">{reason}</Text>
               </div>
               {event.url ? (
                 <Button variant="transparent" size="small" iconOnly aria-label="Open history event" onClick={() => openUrl(event.url)}>
@@ -580,7 +580,7 @@ function ServiceIncidentContext({
       </div>
       {metadata?.notes ? <Text variant="small" color="secondary" className="whitespace-pre-wrap">{metadata.notes}</Text> : null}
       {links.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex min-w-0 flex-wrap gap-2">
           {links.map((link) => {
             const Icon = link.icon;
             return (
@@ -823,10 +823,10 @@ function InvestigationWorkspace({
 
   return (
     <section className="rounded-md border border-separator p-3 flex flex-col gap-3">
-      <div className="flex items-start gap-3">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
         <div className="min-w-0 flex-1">
-          <Text variant="strong">Investigation workspace</Text>
-          <Text variant="small" color="secondary" truncate>
+          <Text variant="strong" className="block">Investigation workspace</Text>
+          <Text variant="small" color="secondary" truncate className="block">
             {service?.name ?? account?.label ?? "Selected source"} · {evidence.length} related evidence items
           </Text>
         </div>
@@ -857,9 +857,9 @@ function InvestigationWorkspace({
           {links.map((link) => {
             const Icon = link.icon;
             return (
-              <Button key={`${link.label}:${link.url}`} variant="glass" size="small" onClick={() => openUrl(link.url)}>
+              <Button key={`${link.label}:${link.url}`} variant="glass" size="small" className="max-w-full" onClick={() => openUrl(link.url)}>
                 <Icon className="size-4" />
-                {link.label}
+                <span className="truncate">{link.label}</span>
               </Button>
             );
           })}
@@ -883,10 +883,10 @@ function InvestigationWorkspace({
                     key={event.id}
                     type="button"
                     onClick={() => openUrl(event.url)}
-                    className="grid grid-cols-[4.5rem_1fr] gap-2 border-t border-separator py-1.5 text-left first:border-t-0"
+                    className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2 border-t border-separator py-1.5 text-left first:border-t-0"
                   >
                     <Text variant="small" color="tertiary" className="tabular-nums">{formatRelativeTime(event.ts)}</Text>
-                    <Text variant="small" truncate>{event.title}</Text>
+                    <Text variant="small" truncate className="block">{event.title}</Text>
                   </button>
                 ))}
               </div>
@@ -912,11 +912,15 @@ function InvestigationWorkspace({
         </div>
       ) : item ? (
         <Callout color="secondary">
-          Create a local incident from this live source to save investigation notes and export a report.
-          <Button variant="glass" size="small" className="ml-2" onClick={() => onCreateIncident(item, evidence.map((event) => event.id))}>
-            <Plus className="size-4" />
-            Create incident
-          </Button>
+          <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <Text variant="small" color="secondary" className="min-w-0">
+              Create a local incident from this live source to save investigation notes and export a report.
+            </Text>
+            <Button variant="glass" size="small" className="shrink-0" onClick={() => onCreateIncident(item, evidence.map((event) => event.id))}>
+              <Plus className="size-4" />
+              Create incident
+            </Button>
+          </div>
         </Callout>
       ) : null}
     </section>
@@ -946,15 +950,15 @@ function TriageRow({
         selected ? "border-accent bg-control-subtle" : "border-separator hover:bg-control-subtle"
       }`}
     >
-      <div className="flex items-start gap-2">
-        <Icon className="size-4 text-tertiary mt-0.5 shrink-0" />
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
+        <Icon className="mt-0.5 size-4 shrink-0 text-tertiary" />
         <div className="min-w-0 flex-1">
-          <Text variant="strong" truncate>{item.title}</Text>
-          <Text variant="small" color="secondary" truncate>{account?.label ?? "Unknown account"} · {item.subtitle}</Text>
+          <Text variant="strong" truncate className="block">{item.title}</Text>
+          <Text variant="small" color="secondary" truncate className="block">{account?.label ?? "Unknown account"} · {item.subtitle}</Text>
         </div>
         <Badge color={item.severity === "critical" || item.severity === "high" ? "red" : "yellow"}>{item.severity}</Badge>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         {item.kind === "signal" && isNormalizedStatus(item.status) ? (
           <StatusBadge status={item.status} />
         ) : (
@@ -962,7 +966,7 @@ function TriageRow({
         )}
         {state?.acknowledgedAt ? <Badge color="secondary">Acknowledged</Badge> : null}
         {silenced ? <Badge color="secondary">Silenced</Badge> : null}
-        <Text variant="small" color="tertiary" className="ml-auto tabular-nums">{formatRelativeTime(item.updatedAt)}</Text>
+        <Text variant="small" color="tertiary" className="ml-auto shrink-0 tabular-nums">{formatRelativeTime(item.updatedAt)}</Text>
       </div>
     </button>
   );
@@ -994,20 +998,20 @@ function LocalIncidentRow({
         selected ? "border-accent bg-control-subtle" : "border-separator hover:bg-control-subtle"
       }`}
     >
-      <div className="flex items-start gap-2">
-        <Icon className="size-4 text-tertiary mt-0.5 shrink-0" />
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2">
+        <Icon className="mt-0.5 size-4 shrink-0 text-tertiary" />
         <div className="min-w-0 flex-1">
-          <Text variant="strong" truncate>{incident.title}</Text>
-          <Text variant="small" color="secondary" truncate>
+          <Text variant="strong" truncate className="block">{incident.title}</Text>
+          <Text variant="small" color="secondary" truncate className="block">
             {account?.label ?? (incident.provider ? providerLabel(incident.provider) : "Manual incident")}
             {incident.assignee ? ` · ${incident.assignee}` : ""}
           </Text>
         </div>
         <Badge color={incident.severity === "critical" || incident.severity === "high" ? "red" : "yellow"}>{incident.severity}</Badge>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <Badge color={localIncidentStatusColor(incident.status)}>{incident.status}</Badge>
-        <Text variant="small" color="tertiary" className="ml-auto tabular-nums">{formatRelativeTime(incident.updatedAt)}</Text>
+        <Text variant="small" color="tertiary" className="ml-auto shrink-0 tabular-nums">{formatRelativeTime(incident.updatedAt)}</Text>
       </div>
     </button>
   );
@@ -1096,11 +1100,11 @@ function LocalIncidentFollowUps({
       </div>
       <div className="flex flex-col">
         {followUps.map((item) => (
-          <div key={item.id} className="grid grid-cols-[auto_1fr_auto] gap-3 py-2 border-t border-separator first:border-t-0 items-start">
-            {item.done ? <CheckCircle2 className="size-4 mt-0.5 text-support-green" /> : <AlertCircle className="size-4 mt-0.5 text-tertiary" />}
+          <div key={item.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 border-t border-separator py-2 first:border-t-0">
+            {item.done ? <CheckCircle2 className="mt-0.5 size-4 text-support-green" /> : <AlertCircle className="mt-0.5 size-4 text-tertiary" />}
             <div className="min-w-0">
-              <Text variant="small" truncate>{item.label}</Text>
-              <Text variant="small" color="tertiary">{item.detail}</Text>
+              <Text variant="small" truncate className="block">{item.label}</Text>
+              <Text variant="small" color="tertiary" className="min-w-0">{item.detail}</Text>
             </div>
             {!item.done && item.onAction ? (
               <Button variant="glass" size="small" onClick={item.onAction}>
@@ -1484,10 +1488,10 @@ function DetailPanel({
           <Text variant="strong">Lifecycle</Text>
           <div className="flex flex-col">
             {lifecycleRows.map((row, index) => (
-              <div key={`${row.ts}:${row.label}:${index}`} className="grid grid-cols-[6rem_7rem_1fr] gap-3 py-2 border-t border-separator first:border-t-0 items-start">
+              <div key={`${row.ts}:${row.label}:${index}`} className="grid grid-cols-[6rem_7rem_minmax(0,1fr)] gap-3 border-t border-separator py-2 first:border-t-0 items-start">
                 <Text variant="small" color="tertiary" className="tabular-nums">{formatRelativeTime(row.ts)}</Text>
                 <Badge color={row.color}>{row.label}</Badge>
-                <Text variant="small">{row.detail}</Text>
+                <Text variant="small" className="min-w-0">{row.detail}</Text>
               </div>
             ))}
           </div>
@@ -1499,9 +1503,9 @@ function DetailPanel({
           ) : (
             <div className="flex flex-col">
               {localIncident.notes.map((note) => (
-                <div key={note.id} className="grid grid-cols-[7rem_1fr] gap-3 py-2 border-t border-separator first:border-t-0">
+                <div key={note.id} className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 border-t border-separator py-2 first:border-t-0">
                   <Text variant="small" color="tertiary" className="tabular-nums">{formatRelativeTime(note.createdAt)}</Text>
-                  <Text variant="small">{note.body}</Text>
+                  <Text variant="small" className="min-w-0">{note.body}</Text>
                 </div>
               ))}
             </div>
@@ -1514,10 +1518,10 @@ function DetailPanel({
           ) : (
             <div className="flex flex-col">
               {scopedEvents.slice(0, 20).map((event) => (
-                <div key={event.id} className="grid grid-cols-[6rem_5rem_1fr_auto] gap-3 py-2 border-t border-separator first:border-t-0 items-center">
+                <div key={event.id} className="grid grid-cols-[6rem_5rem_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-2 first:border-t-0">
                   <Text variant="small" color="tertiary" className="tabular-nums">{formatRelativeTime(event.ts)}</Text>
                   <Badge color={event.type === "failure" || event.type === "incident" ? "red" : "secondary"}>{eventIcon(event)}</Badge>
-                  <Text variant="small" truncate>{event.title}</Text>
+                  <Text variant="small" truncate className="block">{event.title}</Text>
                   <Button variant="transparent" size="small" iconOnly aria-label="Open related event" onClick={() => openUrl(event.url)}>
                     <ExternalLink className="size-4" />
                   </Button>
@@ -1534,19 +1538,21 @@ function DetailPanel({
 
   return (
     <div className="rounded-lg border border-separator p-3 flex flex-col gap-4">
-      <div className="flex items-start gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-2 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0 flex-1">
-          <Text variant="title" truncate>{item.title}</Text>
-          <Text variant="small" color="secondary">{account?.label ?? "Unknown account"} · {providerLabel(item.provider)}</Text>
+          <Text variant="title" truncate className="block">{item.title}</Text>
+          <Text variant="small" color="secondary" truncate className="block">{account?.label ?? "Unknown account"} · {providerLabel(item.provider)}</Text>
         </div>
-        <Button variant="glass" size="small" onClick={() => openUrl(item.url)}>
-          <ExternalLink className="size-4" />
-          Open
-        </Button>
-        <Button variant="accent" size="small" onClick={() => onCreateIncident(item, relatedEvidenceIds)}>
-          <Plus className="size-4" />
-          Create incident
-        </Button>
+        <div className="flex flex-wrap items-center gap-2 md:justify-end">
+          <Button variant="glass" size="small" onClick={() => openUrl(item.url)}>
+            <ExternalLink className="size-4" />
+            Open
+          </Button>
+          <Button variant="accent" size="small" onClick={() => onCreateIncident(item, relatedEvidenceIds)}>
+            <Plus className="size-4" />
+            Create incident
+          </Button>
+        </div>
       </div>
       <ServiceIncidentContext service={service} metadata={serviceMetadata} />
       <InvestigationWorkspace
@@ -1597,10 +1603,10 @@ function DetailPanel({
         ) : (
           <div className="flex flex-col">
             {scopedEvents.slice(0, 20).map((event) => (
-              <div key={event.id} className="grid grid-cols-[6rem_5rem_1fr] gap-3 py-2 border-t border-separator first:border-t-0">
+              <div key={event.id} className="grid grid-cols-[6rem_5rem_minmax(0,1fr)] gap-3 border-t border-separator py-2 first:border-t-0">
                 <Text variant="small" color="tertiary" className="tabular-nums">{formatRelativeTime(event.ts)}</Text>
                 <Badge color={event.type === "failure" || event.type === "incident" ? "red" : "secondary"}>{eventIcon(event)}</Badge>
-                <Text variant="small" truncate>{event.title}</Text>
+                <Text variant="small" truncate className="block">{event.title}</Text>
               </div>
             ))}
           </div>

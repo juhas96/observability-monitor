@@ -15,6 +15,7 @@ import type {
   ObservabilityIncident,
   ObservabilitySignal,
   Provider,
+  ProviderCollectionArea,
   ProviderDeepLink,
 } from "../types.js";
 
@@ -36,6 +37,7 @@ export interface ProviderInfo {
   label: string;
   scopeHint: string;
   fields: CredentialField[];
+  collectionAreas?: ProviderCollectionArea[];
 }
 
 export interface ProviderDefinition extends ProviderInfo {
@@ -88,5 +90,17 @@ export function secretField(id: Provider): CredentialField {
 
 /** Metadata only, safe to send to the renderer. */
 export function publicList(): ProviderInfo[] {
-  return list().map(({ id, label, scopeHint, fields }) => ({ id, label, scopeHint, fields }));
+  return list().map(({ id, label, scopeHint, fields, collectionAreas }) => ({
+    id,
+    label,
+    scopeHint,
+    fields,
+    collectionAreas: collectionAreas?.length ? collectionAreas : [{
+      id: `${id}.core`,
+      label: "Core account health",
+      category: "core",
+      defaultState: "always",
+      guidance: "Polls the provider's primary health, deploy, incident, or status signal for this account.",
+    }],
+  }));
 }

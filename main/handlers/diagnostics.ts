@@ -11,10 +11,12 @@ import * as registry from "../services/providers/index.js";
 import { getToken, isEncryptionAvailable } from "../services/token-store.js";
 import type {
   Account,
+  AccountCollectionAreaDiagnostic,
   AccountDashboardCapabilityDiagnostic,
   AccountDiagnostic,
   DiagnosticErrorCategory,
   DiagnosticStatus,
+  ProviderCollectionArea,
 } from "../services/types.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -47,6 +49,50 @@ function baseStatus(account: Account, hasToken: boolean, missingRequiredConfig: 
   if (!hasToken || missingRequiredConfig.length > 0 || account.lastError) return "error";
   if (!account.lastSyncAt) return "unknown";
   return "ok";
+}
+
+function collectionAreasFor(account: Account): ProviderCollectionArea[] {
+  const definition = registry.get(account.provider);
+  return definition.collectionAreas?.length
+    ? definition.collectionAreas
+    : [{
+      id: `${account.provider}.core`,
+      label: "Core account health",
+      category: "core",
+      defaultState: "always",
+      guidance: "Polls the provider's primary health, deploy, incident, or status signal for this account.",
+    }];
+}
+
+function boolConfig(account: Account, key: string): boolean | undefined {
+  const value = account.config?.[key];
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+function collectionDiagnostics(
+  account: Account,
+  hasToken: boolean,
+  missingRequiredConfig: string[],
+): AccountCollectionAreaDiagnostic[] {
+  const definition = registry.get(account.provider);
+  return collectionAreasFor(account).map((area) => {
+    if (!account.enabled) return { ...area, status: "unavailable", detail: "Account is disabled." };
+    if (!hasToken) return { ...area, status: "unavailable", detail: "No stored token for this account." };
+    if (missingRequiredConfig.length > 0) return { ...area, status: "missing-config", detail: `Missing required config: ${missingRequiredConfig.join(", ")}` };
+    if (area.requiresDashboardCapability && !definition.getDashboardQueryCapabilities) {
+      return { ...area, status: "unavailable", detail: "Provider does not expose live dashboard queries." };
+    }
+    if (area.configKey) {
+      const configured = boolConfig(account, area.configKey);
+      if (configured === true) return { ...area, status: "enabled", detail: "Explicitly enabled in account configuration." };
+      if (configured === false) return { ...area, status: "disabled", detail: "Explicitly disabled in account configuration." };
+    }
+    if (area.defaultState === "always") return { ...area, status: "always-on", detail: "Runs as part of baseline account polling." };
+    if (area.defaultState === "disabled") return { ...area, status: "disabled", detail: "Disabled by default." };
+    return { ...area, status: "disabled", detail: "Configure this area before Multi Monitor queries it." };
+  });
 }
 
 async function dashboardCapabilityDiagnostic(
@@ -136,6 +182,7 @@ async function diagnosticFor(account: Account, validate = false): Promise<Accoun
     backoff: accountBackoff,
     missingRequiredConfig,
     dashboardCapabilities: await dashboardCapabilityDiagnostic(account, token, missingRequiredConfig, validate),
+    collectionAreas: collectionDiagnostics(account, Boolean(token), missingRequiredConfig),
   };
   if (accountBackoff && base.status !== "disabled") base.status = "warning";
   if (base.stale && base.status === "ok") base.status = "warning";

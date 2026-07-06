@@ -10,6 +10,7 @@ import {
   SelectContent,
   SelectItem,
   Button,
+  Badge,
   Text,
   Status,
   Switch,
@@ -216,6 +217,25 @@ export function AddAccountDialog({
           <Text variant="small" color="tertiary">
             {definition.scopeHint}
           </Text>
+        ) : null}
+
+        {definition?.collectionAreas?.length ? (
+          <div className="rounded-md border border-separator p-3">
+            <Text variant="strong">Collection areas</Text>
+            <div className="mt-2 flex flex-col gap-2">
+              {definition.collectionAreas.map((area) => (
+                <div key={area.id} className="flex min-w-0 items-start gap-2">
+                  <Badge color={area.defaultState === "always" ? "blue" : "secondary"}>
+                    {area.defaultState === "always" ? "always-on" : area.defaultState}
+                  </Badge>
+                  <div className="min-w-0">
+                    <Text variant="small" color="secondary">{area.label}</Text>
+                    <Text variant="small" color="tertiary">{area.guidance}</Text>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : null}
 
         <div className="flex items-center gap-3">

@@ -141,6 +141,8 @@ async function main(): Promise<void> {
   const filtersComponent = await readRepoFile("renderer/main/components/filters.tsx");
   const historyHandlers = await readRepoFile("main/handlers/history.ts");
   const historyStore = await readRepoFile("main/services/history-store.ts");
+  const investigationHandler = await readRepoFile("main/handlers/investigation.ts");
+  const investigationContext = await readRepoFile("main/services/investigation-context.ts");
   const alertsView = await readRepoFile("renderer/main/alerts-view.tsx");
   const insightsView = await readRepoFile("renderer/main/insights-view.tsx");
   const incidentsView = await readRepoFile("renderer/main/incidents-view.tsx");
@@ -161,6 +163,9 @@ async function main(): Promise<void> {
 
   check(registry.includes("secretField"), "registry.ts must expose secretField() for the token-store boundary");
   check(registry.includes("publicList"), "registry.ts must expose publicList() for renderer-safe provider metadata");
+  check(registry.includes("collectionAreas") && backendTypes.includes("interface ProviderCollectionArea") && rendererTypes.includes("interface ProviderCollectionArea"), "provider metadata must include configured collection areas on backend and renderer");
+  check(investigationHandler.includes('"investigation:getContext"') && handlersIndex.includes("registerInvestigationHandlers();") && rendererIpc.includes('"investigation:getContext"'), "investigation:getContext IPC must be registered and exposed through renderer IPC");
+  check(investigationContext.includes("buildSnapshot()") && investigationContext.includes("getEvents({ range: \"24h\" })") && !investigationContext.includes("getToken("), "investigation context must assemble non-secret current snapshot and retained history evidence without reading tokens");
   check(!registry.includes("getToken("), "registry.ts must not read provider tokens");
   check(!/from\s+["']\.\/token-store\.js["']/.test(dashboardStore), "dashboard-store.ts must not import token-store");
   check(!dashboardStore.includes("getToken("), "dashboard-store.ts must not read provider tokens");
@@ -253,7 +258,9 @@ async function main(): Promise<void> {
   check(dashboardRunner.includes('__urlLabel: "Open event"'), "local dashboard event rows must label hidden links");
   check(dashboardsView.includes("!column.startsWith(\"__\")"), "dashboard table renderer must hide hidden __ metadata columns");
   check(dashboardsView.includes("row.__url") && dashboardsView.includes("monitorApi.openExternal"), "dashboard table renderer must open row links through monitorApi.openExternal");
-  check(dashboardsView.includes('result.kind === "table" || result.kind === "events" || result.kind === "logs" || result.kind === "traces"') && dashboardsView.includes("<TablePanel result={result} />"), "dashboards-view.tsx must render table, event, log, and trace results through the shared row-link table renderer");
+  check(dashboardsView.includes("function LogRowsPanel") && dashboardsView.includes("<LogRowsPanel result={result} />"), "dashboards-view.tsx must render log results through the dedicated log evidence renderer");
+  check(dashboardsView.includes("function TraceRowsPanel") && dashboardsView.includes("<TraceRowsPanel result={result} />"), "dashboards-view.tsx must render trace results through the dedicated trace evidence renderer");
+  check(dashboardsView.includes("openInvestigation") && dashboardRunner.includes('rowKind: "event"'), "dashboards-view.tsx and local event panels must support row-level investigation context");
   check(dashboardsView.includes("downloadRowsCsv(`${safeTitle}-rows.csv`, columns, sortedRows)") && dashboardsView.includes("(rows ?? []).map((row) => columns.map((column) => row[column]))"), "dashboard table CSV export must use visible columns and omit hidden row-link metadata");
   check(dashboardsView.includes("row.__urlLabel") && dashboardsView.includes("aria-label={typeof row.__urlLabel === \"string\" ? row.__urlLabel : \"Open row\"}"), "dashboard row open actions must use hidden row-link labels when present");
   check(dashboardsHook.includes("retry: false"), "dashboard panel queries must not retry invalid custom provider queries automatically");
@@ -681,6 +688,9 @@ async function main(): Promise<void> {
   const betterstackSource = await readRepoFile("main/services/providers/betterstack.ts");
   check(betterstackSource.includes("out.__url = DASH_URL") && betterstackSource.includes("out.__urlLabel = \"Open Better Stack\""), "betterstack.ts dashboard rows must include direct row links");
   const grafanaSource = await readRepoFile("main/services/providers/grafana.ts");
+  check(grafanaSource.includes("const DEFAULT_SHOW_DATA_SOURCE_HEALTH = false") && grafanaSource.includes("const DEFAULT_ENABLE_LIVE_QUERIES = false"), "grafana.ts must default advanced data-source health and live query discovery to configured-only");
+  check(grafanaSource.includes("function liveQueriesEnabled") && grafanaSource.includes("if (!liveQueriesEnabled(creds)) return []"), "grafana.ts must not discover live query capabilities unless explicitly configured or backed by saved presets");
+  check(grafanaSource.includes("collectionAreas:") && grafanaSource.includes("grafana.liveQueries") && grafanaSource.includes("defaultState: \"configured\""), "grafana.ts must declare configured-only collection areas");
   check(grafanaSource.includes('title: "Active Grafana alerts"') && grafanaSource.includes('capabilityId: "grafana.alerts"'), "grafana.ts must expose an active alerts default dashboard panel");
   check(grafanaSource.includes('title: "Grafana data source health"') && grafanaSource.includes('capabilityId: "grafana.datasources"'), "grafana.ts must expose a datasource health default dashboard panel");
   check(grafanaSource.includes("function firstDatasourceUid") && grafanaSource.includes('firstDatasourceUid(dataSources, "loki")') && grafanaSource.includes('firstDatasourceUid(dataSources, "tempo")'), "grafana.ts must choose discovered Loki/Tempo datasource UIDs when no saved default UID exists");

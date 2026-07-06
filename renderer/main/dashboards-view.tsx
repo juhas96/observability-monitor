@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, Edit3, Plus, RefreshCw, Trash2, ArrowUp, ArrowDown, ExternalLink, Copy, Download, Upload, LayoutTemplate } from "lucide-react";
+import { Bell, Edit3, Plus, RefreshCw, Trash2, ArrowUp, ArrowDown, ExternalLink, Copy, Download, Upload, LayoutTemplate, Search, ScrollText, MoreHorizontal } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   Area,
@@ -43,6 +43,7 @@ import { useProviders } from "./hooks/use-providers";
 import { useServiceMetadata } from "./hooks/use-service-metadata";
 import { ALL, type AppliedFilter, FilterMenu, FilterSelectField, optionLabel, useStoredState } from "./components/filters";
 import { monitorApi } from "./ipc";
+import { openInvestigation } from "./components/investigation";
 import { downloadCsv } from "./utils/csv";
 import type {
   AlertRuleInput,
@@ -192,14 +193,14 @@ interface DashboardTemplateDefinition {
   description: string;
   range: HistoryRange;
   refreshSeconds?: number;
-  buildPanels: (context: { checkId?: string }) => DashboardPanelTemplate[];
+  buildPanels: (context: { checkId?: string; capabilities?: DashboardQueryCapability[] }) => DashboardPanelTemplate[];
 }
 
 const DASHBOARD_TEMPLATES: DashboardTemplateDefinition[] = [
   {
-    id: "executive-health",
-    name: "Executive health",
-    description: "High-level health, status trend, incidents, and recent activity.",
+    id: "service-health",
+    name: "Service health",
+    description: "Current service health, status trend, alerts, and recent activity for an owner or group.",
     range: "24h",
     refreshSeconds: 60,
     buildPanels: () => [
@@ -210,9 +211,9 @@ const DASHBOARD_TEMPLATES: DashboardTemplateDefinition[] = [
     ],
   },
   {
-    id: "deployment-reliability",
-    name: "Deployment reliability",
-    description: "Deploy/release activity, failures, and success/failure trends.",
+    id: "deploy-correlation",
+    name: "Deploy correlation",
+    description: "Deploy and release activity next to failures, recoveries, and status movement.",
     range: "7d",
     refreshSeconds: 120,
     buildPanels: () => [
@@ -223,9 +224,9 @@ const DASHBOARD_TEMPLATES: DashboardTemplateDefinition[] = [
     ],
   },
   {
-    id: "incident-response",
-    name: "Incident response",
-    description: "Response-focused incidents, alerts, failures, and current health.",
+    id: "incident-investigation",
+    name: "Incident investigation",
+    description: "Active incidents, alerts, failures, and the current health context needed for triage.",
     range: "24h",
     refreshSeconds: 60,
     buildPanels: () => [
@@ -249,9 +250,9 @@ const DASHBOARD_TEMPLATES: DashboardTemplateDefinition[] = [
     ],
   },
   {
-    id: "provider-observability",
-    name: "Provider observability",
-    description: "All-provider observability using normalized local monitor history.",
+    id: "provider-reliability",
+    name: "Provider reliability",
+    description: "Provider-scoped health, status counts, incidents, alerts, and retained activity.",
     range: "24h",
     refreshSeconds: 60,
     buildPanels: () => [
@@ -260,6 +261,32 @@ const DASHBOARD_TEMPLATES: DashboardTemplateDefinition[] = [
       { title: "Recent activity", source: { kind: "local", metric: "events" }, visualization: "table", width: "full", height: "medium" },
       { title: "Alerts and incidents", source: { kind: "local", metric: "events", eventTypes: ["alert", "incident"] }, visualization: "table", width: "full", height: "medium" },
     ],
+  },
+  {
+    id: "grafana-investigation",
+    name: "Grafana logs and traces",
+    description: "Grafana investigation starter using configured live trace/log capabilities plus local context.",
+    range: "1h",
+    refreshSeconds: 60,
+    buildPanels: ({ capabilities }) => {
+      const grafanaPanels = (capabilities ?? [])
+        .filter((capability) => capability.provider === "grafana" && capability.defaultPanel && (capability.resultKind === "traces" || capability.resultKind === "logs" || capability.id === "grafana.alerts"))
+        .map((capability) => capability.defaultPanel)
+        .filter((panel): panel is DashboardPanelTemplate => Boolean(panel))
+        .slice(0, 3);
+      const localPanels: DashboardPanelTemplate[] = [
+        { title: "Current health", source: { kind: "local", metric: "snapshotCounts", provider: "grafana" as Provider }, visualization: "stat", width: "half", height: "small" },
+        { title: "Grafana activity", source: { kind: "local", metric: "events", provider: "grafana" as Provider }, visualization: "table", width: "half", height: "small" },
+      ];
+      const fallbackPanels: DashboardPanelTemplate[] = grafanaPanels.length === 0
+        ? [{ title: "Grafana retained events", source: { kind: "local", metric: "events", provider: "grafana" as Provider }, visualization: "table", width: "full", height: "medium" }]
+        : [];
+      return [
+        ...localPanels,
+        ...grafanaPanels,
+        ...fallbackPanels,
+      ];
+    },
   },
   {
     id: "team-ownership",
@@ -1382,24 +1409,40 @@ function downloadRowsCsv(filename: string, columns: string[], rows: DashboardPan
   downloadCsv(filename, columns, (rows ?? []).map((row) => columns.map((column) => row[column])));
 }
 
+function rowText(row: DashboardTableRow, field: string | undefined, fallback = ""): string {
+  if (!field) return fallback;
+  const value = row[field];
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
+
+function rowSearchText(row: DashboardTableRow, columns: string[]): string {
+  return [
+    ...columns.map((column) => row[column]),
+    row.__urlLabel,
+  ]
+    .filter((value) => value !== null && value !== undefined)
+    .map((value) => typeof value === "object" ? JSON.stringify(value) : String(value))
+    .join(" ")
+    .toLowerCase();
+}
+
+function dashboardResultColumns(result: DashboardPanelResult): string[] {
+  const rows = result.rows ?? [];
+  return (result.columns?.length ? result.columns : Object.keys(rows[0] ?? {})).filter((column) => !column.startsWith("__"));
+}
+
 function TablePanel({ result }: { result: DashboardPanelResult }) {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<{ column: string; direction: "asc" | "desc" } | null>(null);
   const rows = result.rows ?? [];
-  const columns = (result.columns?.length ? result.columns : Object.keys(rows[0] ?? {})).filter((column) => !column.startsWith("__"));
+  const columns = dashboardResultColumns(result);
   const filteredRows = rows.filter((row) => {
     const query = search.trim().toLowerCase();
     if (!query) return true;
-    const haystack = [
-      ...columns.map((column) => row[column]),
-      row.__urlLabel,
-    ]
-      .filter((value) => value !== null && value !== undefined)
-      .map((value) => String(value))
-      .join(" ")
-      .toLowerCase();
-    return haystack.includes(query);
+    return rowSearchText(row, columns).includes(query);
   });
   const sortedRows = [...filteredRows].sort((a, b) => {
     if (!sort) return 0;
@@ -1428,6 +1471,7 @@ function TablePanel({ result }: { result: DashboardPanelResult }) {
   };
   const hasLinks = rows.some((row) => typeof row.__url === "string" && row.__url.trim() !== "");
   const hasIncidentActions = rows.some((row) => typeof row.__eventId === "string" && row.__eventId.trim() !== "");
+  const hasInvestigationActions = hasIncidentActions || result.presentation?.rowKind === "event";
   const openRow = (url: string) => {
     void monitorApi.openExternal(url).catch((error) => toast.error(error instanceof Error ? error.message : String(error)));
   };
@@ -1462,6 +1506,30 @@ function TablePanel({ result }: { result: DashboardPanelResult }) {
     }));
     void navigate({ to: "/incidents" });
   };
+  const investigateRow = (row: DashboardTableRow) => {
+    if (typeof row.__eventId === "string" && row.__eventId.trim() !== "") {
+      openInvestigation({
+        kind: "event",
+        eventId: row.__eventId,
+        accountId: typeof row.__eventAccountId === "string" ? row.__eventAccountId : undefined,
+        provider: typeof row.__eventProvider === "string" ? row.__eventProvider as Provider : undefined,
+        groupId: typeof row.__eventGroupId === "string" ? row.__eventGroupId : undefined,
+        title: typeof row.title === "string" ? row.title : result.title,
+        ts: typeof row.__eventTs === "string" ? row.__eventTs : undefined,
+        url: typeof row.__url === "string" ? row.__url : undefined,
+      });
+      return;
+    }
+    openInvestigation({
+      kind: "manual",
+      accountId: result.accountId,
+      provider: result.provider,
+      title: rowText(row, result.presentation?.primaryField, result.title ?? "Dashboard row"),
+      subtitle: rowText(row, result.presentation?.secondaryField),
+      ts: rowText(row, result.presentation?.timestampField),
+      url: typeof row.__url === "string" ? row.__url : undefined,
+    });
+  };
   const exportRows = () => {
     const safeTitle = (result.title ?? result.kind ?? "dashboard-panel").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "dashboard-panel";
     downloadRowsCsv(`${safeTitle}-rows.csv`, columns, sortedRows);
@@ -1493,7 +1561,7 @@ function TablePanel({ result }: { result: DashboardPanelResult }) {
           <table className="w-full min-w-[560px] text-left text-sm">
             <thead className="bg-control-subtle text-tertiary">
               <tr>
-                {hasIncidentActions ? <th className="w-10 px-3 py-2 font-medium">Investigate</th> : null}
+                {hasInvestigationActions ? <th className="w-10 px-3 py-2 font-medium">Investigate</th> : null}
                 {hasLinks ? <th className="w-10 px-3 py-2 font-medium">Open</th> : null}
                 {columns.map((column) => (
                   <th key={column} className="px-3 py-2 font-medium">
@@ -1515,19 +1583,30 @@ function TablePanel({ result }: { result: DashboardPanelResult }) {
             <tbody>
               {sortedRows.slice(0, 100).map((row, index) => (
                 <tr key={index} className="border-t border-separator">
-                  {hasIncidentActions ? (
+                  {hasInvestigationActions ? (
                     <td className="px-3 py-2 align-top">
-                      {typeof row.__eventId === "string" && row.__eventId.trim() !== "" ? (
+                      <div className="flex items-center gap-1">
                         <Button
                           variant="transparent"
                           size="small"
                           iconOnly
-                          aria-label="Create incident from event"
-                          onClick={() => createIncident(row)}
+                          aria-label="Investigate row"
+                          onClick={() => investigateRow(row)}
                         >
-                          <Plus className="size-4" />
+                          <Search className="size-4" />
                         </Button>
-                      ) : null}
+                        {typeof row.__eventId === "string" && row.__eventId.trim() !== "" ? (
+                          <Button
+                            variant="transparent"
+                            size="small"
+                            iconOnly
+                            aria-label="Create incident from event"
+                            onClick={() => createIncident(row)}
+                          >
+                            <Plus className="size-4" />
+                          </Button>
+                        ) : null}
+                      </div>
                     </td>
                   ) : null}
                   {hasLinks ? (
@@ -1555,6 +1634,145 @@ function TablePanel({ result }: { result: DashboardPanelResult }) {
       {sortedRows.length > 100 ? (
         <Text variant="small" color="tertiary">Showing first 100 matching rows.</Text>
       ) : null}
+    </div>
+  );
+}
+
+function LogRowsPanel({ result }: { result: DashboardPanelResult }) {
+  const [search, setSearch] = useState("");
+  const rows = result.rows ?? [];
+  const columns = dashboardResultColumns(result);
+  const timestampField = result.presentation?.timestampField ?? "timestamp";
+  const messageField = result.presentation?.messageField ?? result.presentation?.primaryField ?? "message";
+  const sourceField = result.presentation?.sourceField ?? "source";
+  const filteredRows = rows.filter((row) => {
+    const query = search.trim().toLowerCase();
+    return !query || rowSearchText(row, columns).includes(query);
+  });
+  const exportRows = () => {
+    const safeTitle = (result.title ?? "logs").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "logs";
+    downloadRowsCsv(`${safeTitle}-rows.csv`, columns, filteredRows);
+  };
+  if (rows.length === 0) return <Text variant="small" color="tertiary">No logs returned.</Text>;
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1 max-w-md">
+          <ScrollText className="size-4 text-tertiary absolute left-2 top-1/2 -translate-y-1/2" />
+          <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter logs..." size="small" variant="filled" className="pl-8" />
+        </div>
+        <Text variant="small" color="tertiary">{filteredRows.length} of {rows.length} logs</Text>
+        <Button variant="glass" size="small" onClick={exportRows} disabled={filteredRows.length === 0} className="ml-auto">
+          <Download className="size-4" />
+          Export CSV
+        </Button>
+      </div>
+      <div className="flex max-h-[420px] flex-col gap-2 overflow-auto rounded-md border border-separator p-2">
+        {filteredRows.slice(0, 100).map((row, index) => {
+          const timestamp = rowText(row, timestampField);
+          const source = rowText(row, sourceField);
+          const message = rowText(row, messageField, rowText(row, "line"));
+          return (
+            <div key={index} className="rounded-md border border-separator p-2">
+              <div className="flex min-w-0 items-center gap-2">
+                {timestamp ? <Text variant="small" color="tertiary" className="tabular-nums">{new Date(timestamp).toLocaleString()}</Text> : null}
+                {source ? <Badge color="secondary">{source}</Badge> : null}
+                {typeof row.__url === "string" && row.__url.trim() !== "" ? (
+                  <Button variant="transparent" size="small" iconOnly aria-label={typeof row.__urlLabel === "string" ? row.__urlLabel : "Open log"} onClick={() => void monitorApi.openExternal(row.__url ?? "")}>
+                    <ExternalLink className="size-4" />
+                  </Button>
+                ) : null}
+              </div>
+              <Text variant="small" color="secondary" className="break-words font-mono">{message}</Text>
+              {columns.filter((column) => ![timestampField, sourceField, messageField].includes(column)).slice(0, 4).length > 0 ? (
+                <div className="mt-1 flex flex-wrap gap-1">
+                  {columns.filter((column) => ![timestampField, sourceField, messageField].includes(column)).slice(0, 4).map((column) => (
+                    <Badge key={column} color="secondary">{column}: {rowText(row, column)}</Badge>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {filteredRows.length > 100 ? <Text variant="small" color="tertiary">Showing first 100 matching logs.</Text> : null}
+    </div>
+  );
+}
+
+function TraceRowsPanel({ result }: { result: DashboardPanelResult }) {
+  const [search, setSearch] = useState("");
+  const rows = result.rows ?? [];
+  const columns = dashboardResultColumns(result);
+  const primaryField = result.presentation?.primaryField ?? "name";
+  const secondaryField = result.presentation?.secondaryField ?? "traceId";
+  const sourceField = result.presentation?.sourceField ?? "service";
+  const timestampField = result.presentation?.timestampField ?? "startTime";
+  const durationField = result.presentation?.durationField ?? "durationMs";
+  const filteredRows = rows
+    .filter((row) => {
+      const query = search.trim().toLowerCase();
+      return !query || rowSearchText(row, columns).includes(query);
+    })
+    .sort((a, b) => Number(b[durationField] ?? 0) - Number(a[durationField] ?? 0));
+  const exportRows = () => {
+    const safeTitle = (result.title ?? "traces").replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-|-$/g, "") || "traces";
+    downloadRowsCsv(`${safeTitle}-rows.csv`, columns, filteredRows);
+  };
+  if (rows.length === 0) return <Text variant="small" color="tertiary">No traces returned.</Text>;
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Filter traces..." size="small" variant="filled" className="max-w-xs" />
+        <Text variant="small" color="tertiary">{filteredRows.length} of {rows.length} traces · slowest first</Text>
+        <Button variant="glass" size="small" onClick={exportRows} disabled={filteredRows.length === 0} className="ml-auto">
+          <Download className="size-4" />
+          Export CSV
+        </Button>
+      </div>
+      <div className="grid grid-cols-1 gap-2">
+        {filteredRows.slice(0, 80).map((row, index) => {
+          const title = rowText(row, primaryField, "Trace");
+          const traceId = rowText(row, secondaryField);
+          const service = rowText(row, sourceField);
+          const timestamp = rowText(row, timestampField);
+          const duration = rowText(row, durationField);
+          return (
+            <div key={index} className="rounded-md border border-separator p-3">
+              <div className="flex min-w-0 items-start gap-2">
+                <div className="min-w-0 flex-1">
+                  <Text variant="strong" truncate>{title}</Text>
+                  <Text variant="small" color="secondary" truncate>{[service, traceId].filter(Boolean).join(" · ")}</Text>
+                  {timestamp ? <Text variant="small" color="tertiary">{new Date(timestamp).toLocaleString()}</Text> : null}
+                </div>
+                {duration ? <Badge color="blue">{duration} ms</Badge> : null}
+                <Button
+                  variant="transparent"
+                  size="small"
+                  iconOnly
+                  aria-label="Investigate trace"
+                  onClick={() => openInvestigation({ kind: "manual", accountId: result.accountId, provider: result.provider, title, subtitle: service || traceId, ts: timestamp, url: typeof row.__url === "string" ? row.__url : undefined })}
+                >
+                  <Search className="size-4" />
+                </Button>
+                {typeof row.__url === "string" && row.__url.trim() !== "" ? (
+                  <Button variant="transparent" size="small" iconOnly aria-label={typeof row.__urlLabel === "string" ? row.__urlLabel : "Open trace"} onClick={() => void monitorApi.openExternal(row.__url ?? "")}>
+                    <ExternalLink className="size-4" />
+                  </Button>
+                ) : null}
+              </div>
+              {columns.filter((column) => ![primaryField, secondaryField, sourceField, timestampField, durationField].includes(column)).slice(0, 4).length > 0 ? (
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {columns.filter((column) => ![primaryField, secondaryField, sourceField, timestampField, durationField].includes(column)).slice(0, 4).map((column) => (
+                    <Badge key={column} color="secondary">{column}: {rowText(row, column)}</Badge>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      {filteredRows.length > 80 ? <Text variant="small" color="tertiary">Showing first 80 matching traces.</Text> : null}
     </div>
   );
 }
@@ -1632,7 +1850,11 @@ function PanelBody({ panel, dashboard, filters }: { panel: DashboardPanel; dashb
       {result.warnings?.map((warning) => <Callout key={warning} color="secondary">{warning}</Callout>)}
       {panel.visualization === "stat" || result.kind === "stat" ? (
         <StatsPanel result={result} />
-      ) : panel.visualization === "table" || result.kind === "table" || result.kind === "events" || result.kind === "logs" || result.kind === "traces" ? (
+      ) : panel.visualization === "logs" || result.kind === "logs" || result.presentation?.rowKind === "log" ? (
+        <LogRowsPanel result={result} />
+      ) : panel.visualization === "traces" || result.kind === "traces" || result.presentation?.rowKind === "trace" ? (
+        <TraceRowsPanel result={result} />
+      ) : panel.visualization === "table" || result.kind === "table" || result.kind === "events" ? (
         <TablePanel result={result} />
       ) : (
         <ChartPanel result={result} visualization={panel.visualization} height={panel.height} onPointClick={openDrilldown} />
@@ -1776,6 +1998,7 @@ function DashboardTemplateDialog({
   open,
   selectedId,
   hasChecks,
+  capabilities,
   onSelect,
   onOpenChange,
   onCreate,
@@ -1783,6 +2006,7 @@ function DashboardTemplateDialog({
   open: boolean;
   selectedId: string;
   hasChecks: boolean;
+  capabilities: DashboardQueryCapability[];
   onSelect: (id: string) => void;
   onOpenChange: (open: boolean) => void;
   onCreate: () => void;
@@ -1813,7 +2037,7 @@ function DashboardTemplateDialog({
                   <Text variant="strong">{template.name}</Text>
                   <Text variant="small" color="secondary">{template.description}</Text>
                   <Text variant="small" color="tertiary">
-                    {template.buildPanels({}).length} panels · {template.range}{template.refreshSeconds ? ` · refresh ${template.refreshSeconds}s` : ""}
+                    {template.buildPanels({ capabilities }).length} panels · {template.range}{template.refreshSeconds ? ` · refresh ${template.refreshSeconds}s` : ""}
                   </Text>
                 </div>
               </div>
@@ -1905,6 +2129,8 @@ export function DashboardsView() {
   const [editingPanel, setEditingPanel] = useState<DashboardPanel | null>(null);
   const [copyingPanel, setCopyingPanel] = useState<DashboardPanel | null>(null);
   const [copyTargetDashboardId, setCopyTargetDashboardId] = useState("");
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!dashboardsQuery.data) return;
@@ -1932,6 +2158,24 @@ export function DashboardsView() {
     if (dashboardId && dashboards.some((dashboard) => dashboard.id === dashboardId)) return;
     setDashboardId(dashboards[0]?.id ?? "");
   }, [dashboardId, dashboards]);
+
+  useEffect(() => {
+    if (!actionsMenuOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (target instanceof Node && actionsMenuRef.current?.contains(target)) return;
+      setActionsMenuOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setActionsMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [actionsMenuOpen]);
 
   const dashboard = dashboards.find((candidate) => candidate.id === dashboardId) ?? null;
   const filteredDashboards = dashboards.filter((item) => {
@@ -2082,7 +2326,7 @@ export function DashboardsView() {
         description: template.description,
         range: template.range,
         refreshSeconds: template.refreshSeconds,
-        panels: template.buildPanels({ checkId: firstCheck?.id }).map((panel, order) => dashboardPanelFromTemplate(panel, order)),
+        panels: template.buildPanels({ checkId: firstCheck?.id, capabilities: capabilitiesQuery.data ?? [] }).map((panel, order) => dashboardPanelFromTemplate(panel, order)),
       });
       setDashboardId(created.id);
       setTemplateDialogOpen(false);
@@ -2164,15 +2408,15 @@ export function DashboardsView() {
   const hasLocalScope = activeFilters.length > 0 || variableBadges.length > 0;
 
   const actions = (
-    <div className="flex min-w-0 items-center gap-2 flex-wrap justify-end">
-      <div className="flex items-center gap-2">
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+      <div className="flex min-w-0 items-center gap-2">
         <Input
           value={dashboardSearch}
           onChange={(event) => setDashboardSearch(event.target.value)}
           placeholder="Find dashboard..."
           variant="filled"
           size="small"
-          className="w-48"
+          className="w-48 max-w-[min(12rem,35vw)]"
         />
         {dashboardSearch.trim() ? (
           <>
@@ -2186,7 +2430,7 @@ export function DashboardsView() {
         ) : null}
       </div>
       <Select value={dashboardId || NONE} onValueChange={(value) => setDashboardId(value === NONE ? "" : value)}>
-        <SelectTrigger variant="glass" size="large"><SelectValue /></SelectTrigger>
+        <SelectTrigger variant="glass" size="large" className="max-w-[14rem]"><SelectValue /></SelectTrigger>
         <SelectContent>
           {dashboards.length === 0 ? <SelectItem value={NONE}>No dashboards</SelectItem> : null}
           {dashboards.length > 0 && visibleDashboards.length === 0 ? <SelectItem value={NONE}>No dashboards match</SelectItem> : null}
@@ -2208,24 +2452,105 @@ export function DashboardsView() {
         <FilterSelectField label="Tier" value={runtimeFilters.tier} onChange={(value) => setRuntimeFilter("tier", value as DashboardRuntimeFilters["tier"])} options={tierOptions} />
         <FilterSelectField label="Dependency" value={runtimeFilters.dependency} onChange={(value) => setRuntimeFilter("dependency", value)} options={dependencyOptions} />
       </FilterMenu>
-      <Button variant="transparent" size="large" iconOnly aria-label="Refresh panels" onClick={() => void queryClient.invalidateQueries({ queryKey: ["dashboards", "panel"] })}>
-        <RefreshCw className="size-4" />
-      </Button>
-      <Button variant="transparent" size="large" onClick={() => { setEditingDashboard(dashboard); setDashboardDialogOpen(true); }} disabled={!dashboard}>
-        <Edit3 className="size-4" /> Edit
-      </Button>
-      <Button variant="transparent" size="large" onClick={duplicateDashboard} disabled={!dashboard}>
-        <Copy className="size-4" /> Duplicate
-      </Button>
-      <Button variant="transparent" size="large" onClick={() => void exportDashboard()} disabled={!dashboard || exportOne.isPending}>
-        <Download className="size-4" /> Export
-      </Button>
-      <Button variant="transparent" size="large" onClick={() => void importDashboard()} disabled={importOne.isPending}>
-        <Upload className="size-4" /> Import
-      </Button>
-      <Button variant="transparent" size="large" onClick={() => setTemplateDialogOpen(true)}>
-        <LayoutTemplate className="size-4" /> Templates
-      </Button>
+      <div ref={actionsMenuRef} className="relative">
+        <Button
+          variant="glass"
+          size="large"
+          aria-label="Open dashboard actions"
+          aria-expanded={actionsMenuOpen}
+          aria-haspopup="menu"
+          onClick={() => setActionsMenuOpen((open) => !open)}
+        >
+          <MoreHorizontal className="size-4" />
+          More
+        </Button>
+        {actionsMenuOpen ? (
+          <div
+            role="menu"
+            className="absolute right-0 top-[calc(100%+0.375rem)] z-50 w-56 overflow-hidden rounded-popover bg-popover p-2 shadow-popover ring-1 ring-foreground-20"
+          >
+            <div className="flex flex-col gap-1">
+              <Button
+                variant="transparent"
+                size="small"
+                className="w-full justify-start"
+                onClick={() => {
+                  setActionsMenuOpen(false);
+                  void queryClient.invalidateQueries({ queryKey: ["dashboards", "panel"] });
+                }}
+              >
+                <RefreshCw className="size-4" />
+                Refresh panels
+              </Button>
+              <Button
+                variant="transparent"
+                size="small"
+                className="w-full justify-start"
+                onClick={() => {
+                  setActionsMenuOpen(false);
+                  setEditingDashboard(dashboard);
+                  setDashboardDialogOpen(true);
+                }}
+                disabled={!dashboard}
+              >
+                <Edit3 className="size-4" />
+                Edit dashboard
+              </Button>
+              <Button
+                variant="transparent"
+                size="small"
+                className="w-full justify-start"
+                onClick={() => {
+                  setActionsMenuOpen(false);
+                  void duplicateDashboard();
+                }}
+                disabled={!dashboard}
+              >
+                <Copy className="size-4" />
+                Duplicate dashboard
+              </Button>
+              <Button
+                variant="transparent"
+                size="small"
+                className="w-full justify-start"
+                onClick={() => {
+                  setActionsMenuOpen(false);
+                  void exportDashboard();
+                }}
+                disabled={!dashboard || exportOne.isPending}
+              >
+                <Download className="size-4" />
+                Export dashboard
+              </Button>
+              <Button
+                variant="transparent"
+                size="small"
+                className="w-full justify-start"
+                onClick={() => {
+                  setActionsMenuOpen(false);
+                  void importDashboard();
+                }}
+                disabled={importOne.isPending}
+              >
+                <Upload className="size-4" />
+                Import dashboard
+              </Button>
+              <Button
+                variant="transparent"
+                size="small"
+                className="w-full justify-start"
+                onClick={() => {
+                  setActionsMenuOpen(false);
+                  setTemplateDialogOpen(true);
+                }}
+              >
+                <LayoutTemplate className="size-4" />
+                Templates
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
       <Button variant="accent" size="large" onClick={() => { setEditingDashboard(null); setDashboardDialogOpen(true); }}>
         <Plus className="size-4" /> Dashboard
       </Button>
@@ -2354,6 +2679,7 @@ export function DashboardsView() {
         open={templateDialogOpen}
         selectedId={selectedTemplateId}
         hasChecks={(checksQuery.data ?? []).length > 0}
+        capabilities={capabilitiesQuery.data ?? []}
         onSelect={setSelectedTemplateId}
         onOpenChange={setTemplateDialogOpen}
         onCreate={() => void createDashboardFromTemplate()}

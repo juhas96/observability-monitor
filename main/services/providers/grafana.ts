@@ -17,9 +17,10 @@ import type {
 import type { ProviderDefinition } from "./registry.js";
 
 const DEFAULT_SHOW_ALERTS = true;
-const DEFAULT_SHOW_DATA_SOURCE_HEALTH = true;
+const DEFAULT_SHOW_DATA_SOURCE_HEALTH = false;
 const DEFAULT_SHOW_DASHBOARDS = false;
 const DEFAULT_SHOW_ANNOTATIONS = false;
+const DEFAULT_ENABLE_LIVE_QUERIES = false;
 const MAX_DATA_SOURCES = 25;
 const MAX_DASHBOARDS = 10;
 const MAX_ANNOTATIONS = 20;
@@ -133,6 +134,20 @@ function mapDataSourceHealth(status: string | undefined): NormalizedStatus {
 
 function enabled(creds: Record<string, string>, key: string, defaultValue: boolean): boolean {
   return (creds[key] ?? String(defaultValue)) === "true";
+}
+
+function hasSavedObservabilityConfig(creds: Record<string, string>): boolean {
+  const config = parseObservabilityConfig(creds.grafanaObservability);
+  return Boolean(
+    config.lokiDataSourceUid ||
+    config.tempoDataSourceUid ||
+    config.logPresets.length > 0 ||
+    config.tracePresets.length > 0,
+  );
+}
+
+function liveQueriesEnabled(creds: Record<string, string>): boolean {
+  return enabled(creds, "enableLiveQueries", DEFAULT_ENABLE_LIVE_QUERIES) || hasSavedObservabilityConfig(creds);
 }
 
 function csv(value: string | undefined): string[] {
@@ -352,7 +367,19 @@ async function runDashboardLoki(baseUrl: string, token: string, query: Dashboard
     }
   }
   rows.sort((a, b) => new Date(String(b.timestamp)).getTime() - new Date(String(a.timestamp)).getTime());
-  return { kind: "logs", generatedAt: new Date().toISOString(), rows: rows.slice(0, limit), columns: ["timestamp", "labels", "line"] };
+  return {
+    kind: "logs",
+    generatedAt: new Date().toISOString(),
+    rows: rows.slice(0, limit),
+    columns: ["timestamp", "labels", "line"],
+    presentation: {
+      rowKind: "log",
+      timestampField: "timestamp",
+      sourceField: "labels",
+      messageField: "line",
+      primaryField: "line",
+    },
+  };
 }
 
 async function runDashboardTempo(baseUrl: string, token: string, query: DashboardProviderQuery, creds: Record<string, string>): Promise<DashboardPanelResult> {
@@ -383,7 +410,20 @@ async function runDashboardTempo(baseUrl: string, token: string, query: Dashboar
     __url: trace.traceID ? grafanaTraceUrl(baseUrl, datasourceUid, trace.traceID, bounds) : undefined,
     __urlLabel: "Open trace",
   }));
-  return { kind: "traces", generatedAt: new Date().toISOString(), rows, columns: ["traceId", "service", "name", "startTime", "durationMs", "matchedSpans"] };
+  return {
+    kind: "traces",
+    generatedAt: new Date().toISOString(),
+    rows,
+    columns: ["traceId", "service", "name", "startTime", "durationMs", "matchedSpans"],
+    presentation: {
+      rowKind: "trace",
+      primaryField: "name",
+      secondaryField: "traceId",
+      timestampField: "startTime",
+      durationField: "durationMs",
+      sourceField: "service",
+    },
+  };
 }
 
 async function runDashboardTempoServices(baseUrl: string, token: string, query: DashboardProviderQuery, creds: Record<string, string>): Promise<DashboardPanelResult> {
@@ -666,13 +706,57 @@ export const grafanaProvider: ProviderDefinition = {
     { key: "baseUrl", label: "Instance URL", type: "text", placeholder: "https://you.grafana.net", required: true, secret: false },
     { key: "token", label: "Service account token", type: "password", placeholder: "glsa_… / API key", required: true, secret: true },
     { key: "showAlerts", label: "Show alerts", type: "boolean", required: false, secret: false, defaultValue: "true" },
-    { key: "showDataSourceHealth", label: "Show data source health", type: "boolean", required: false, secret: false, defaultValue: "true" },
+    { key: "showDataSourceHealth", label: "Show data source health", type: "boolean", required: false, secret: false, defaultValue: "false" },
     { key: "showDashboards", label: "Show dashboards", type: "boolean", required: false, secret: false, defaultValue: "false" },
     { key: "showAnnotations", label: "Show annotations", type: "boolean", required: false, secret: false, defaultValue: "false" },
+    { key: "enableLiveQueries", label: "Enable live dashboard queries", type: "boolean", required: false, secret: false, defaultValue: "false" },
     { key: "dataSourceUids", label: "Data source UIDs", type: "text", placeholder: "Optional, comma-separated", required: false, secret: false },
     { key: "dashboardQuery", label: "Dashboard search", type: "text", placeholder: "Optional search text", required: false, secret: false },
     { key: "dashboardTags", label: "Dashboard tags", type: "text", placeholder: "Optional, comma-separated", required: false, secret: false },
     { key: "annotationTags", label: "Annotation tags", type: "text", placeholder: "Optional, comma-separated", required: false, secret: false },
+  ],
+  collectionAreas: [
+    {
+      id: "grafana.alerts",
+      label: "Active alerts",
+      category: "alerts",
+      configKey: "showAlerts",
+      defaultState: "always",
+      guidance: "Polls firing and pending Grafana alert rules as the baseline health signal.",
+    },
+    {
+      id: "grafana.datasources",
+      label: "Data source health",
+      category: "datasources",
+      configKey: "showDataSourceHealth",
+      defaultState: "configured",
+      guidance: "Enable this only when you want Multi Monitor to health-check Grafana data sources.",
+    },
+    {
+      id: "grafana.dashboards",
+      label: "Dashboard search",
+      category: "dashboards",
+      configKey: "showDashboards",
+      defaultState: "configured",
+      guidance: "Enable and scope dashboard search text or tags before dashboard metadata is queried.",
+    },
+    {
+      id: "grafana.annotations",
+      label: "Annotations",
+      category: "annotations",
+      configKey: "showAnnotations",
+      defaultState: "configured",
+      guidance: "Enable and scope annotation tags before annotation history is queried.",
+    },
+    {
+      id: "grafana.liveQueries",
+      label: "Live logs, traces, and metrics panels",
+      category: "liveQueries",
+      configKey: "enableLiveQueries",
+      defaultState: "configured",
+      guidance: "Enable this or save Loki/Tempo presets before Multi Monitor discovers live dashboard query capabilities.",
+      requiresDashboardCapability: true,
+    },
   ],
   async validate(creds) {
     const health = await grafanaFetch<GrafanaHealth>(creds.baseUrl, creds.token, "/api/health");
@@ -720,6 +804,7 @@ export const grafanaProvider: ProviderDefinition = {
     return await fetchGrafanaLogs(account.id, item);
   },
   async getDashboardQueryCapabilities(_account, creds) {
+    if (!liveQueriesEnabled(creds)) return [];
     const dataSources = await dashboardDataSources(creds.baseUrl, creds.token).catch(() => []);
     const config = parseObservabilityConfig(creds.grafanaObservability);
     const defaultLokiUid = config.lokiDataSourceUid || firstDatasourceUid(dataSources, "loki");

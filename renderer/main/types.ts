@@ -184,6 +184,37 @@ export interface ProviderDeepLink {
   category: MonitorCategory | "settings" | "logs" | "metrics" | "traces";
 }
 
+export type ProviderCollectionCategory =
+  | "core"
+  | "logs"
+  | "traces"
+  | "metrics"
+  | "dashboards"
+  | "annotations"
+  | "datasources"
+  | "incidents"
+  | "alerts"
+  | "liveQueries";
+
+export type ProviderCollectionDefault = "always" | "configured" | "disabled";
+
+export interface ProviderCollectionArea {
+  id: string;
+  label: string;
+  category: ProviderCollectionCategory;
+  configKey?: string;
+  defaultState: ProviderCollectionDefault;
+  guidance: string;
+  requiresDashboardCapability?: boolean;
+}
+
+export type AccountCollectionAreaStatus = "always-on" | "enabled" | "disabled" | "unavailable" | "missing-config";
+
+export interface AccountCollectionAreaDiagnostic extends ProviderCollectionArea {
+  status: AccountCollectionAreaStatus;
+  detail?: string;
+}
+
 export interface AccountStaleness {
   accountId: string;
   stale: boolean;
@@ -410,6 +441,21 @@ export interface DashboardPanelResult {
   warnings?: string[];
   provider?: Provider;
   accountId?: string;
+  presentation?: DashboardResultPresentation;
+}
+
+export type DashboardResultRowKind = "generic" | "log" | "trace" | "event";
+
+export interface DashboardResultPresentation {
+  rowKind?: DashboardResultRowKind;
+  primaryField?: string;
+  secondaryField?: string;
+  timestampField?: string;
+  severityField?: string;
+  statusField?: string;
+  durationField?: string;
+  sourceField?: string;
+  messageField?: string;
 }
 
 export interface DashboardQueryCapability {
@@ -754,6 +800,7 @@ export interface AccountDiagnostic {
   };
   missingRequiredConfig: string[];
   dashboardCapabilities?: AccountDashboardCapabilityDiagnostic;
+  collectionAreas: AccountCollectionAreaDiagnostic[];
   validation?: {
     ok: boolean;
     checkedAt: string;
@@ -858,6 +905,39 @@ export interface ProviderInfo {
   label: string;
   scopeHint: string;
   fields: CredentialField[];
+  collectionAreas: ProviderCollectionArea[];
+}
+
+export interface InvestigationTrigger {
+  kind: "item" | "event" | "manual";
+  itemUid?: string;
+  eventId?: string;
+  accountId?: string;
+  provider?: Provider;
+  groupId?: string;
+  title?: string;
+  subtitle?: string;
+  status?: NormalizedStatus | IncidentStatus;
+  severity?: ObservabilitySeverity;
+  category?: MonitorCategory;
+  ts?: string;
+  url?: string;
+}
+
+export interface InvestigationContext {
+  generatedAt: string;
+  trigger: InvestigationTrigger;
+  account?: Pick<Account, "id" | "provider" | "label" | "groupId" | "identity" | "enabled" | "lastSyncAt" | "lastError">;
+  group?: ProjectGroup;
+  service?: ServiceHealth;
+  serviceMetadata?: ServiceMetadata;
+  currentItems: MonitorItem[];
+  relatedEvents: HistoryEvent[];
+  relatedSignals: ObservabilitySignal[];
+  relatedIncidents: ObservabilityIncident[];
+  relatedMetrics: MetricsSummary[];
+  relatedChecks: HttpCheckResult[];
+  deepLinks: ProviderDeepLink[];
 }
 
 export interface AddAccountRequest {

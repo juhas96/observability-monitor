@@ -390,7 +390,20 @@ async function runLocalPanel(source: DashboardLocalSource, range: HistoryRange):
           __urlLabel: "Open event",
         });
       });
-    return { kind: "events", generatedAt, rows, columns: ["time", "type", "provider", "title", "status", "severity"] };
+    return {
+      kind: "events",
+      generatedAt,
+      rows,
+      columns: ["time", "type", "provider", "title", "status", "severity"],
+      presentation: {
+        rowKind: "event",
+        primaryField: "title",
+        secondaryField: "provider",
+        timestampField: "time",
+        statusField: "status",
+        severityField: "severity",
+      },
+    };
   }
 
   if (source.metric === "snapshotCounts") {

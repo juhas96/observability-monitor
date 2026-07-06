@@ -24,6 +24,7 @@ import {
 import { StatusBadge } from "./components/status-badge";
 import { formatRelativeTime } from "./components/relative-time";
 import { providerIcon, providerLabel } from "./components/provider-meta";
+import { openInvestigation } from "./components/investigation";
 import {
   ALL,
   type AppliedFilter,
@@ -68,7 +69,6 @@ const FILTER_KEY = "apps.filters.v1";
 const FILTER_PRESET_KEY = `${FILTER_KEY}.presets`;
 const APP_SELECT_KEY = "apps.select.v1";
 const ACCOUNT_SELECT_KEY = "accounts.select.v1";
-const INCIDENT_CREATE_KEY = "incidents.create.v1";
 const ALERT_RULE_DRAFT_KEY = "alerts.draft.v1";
 const SERVICE_TIER_NONE = "none";
 const SERVICE_TIERS: { value: ServiceTier; label: string }[] = [
@@ -246,10 +246,10 @@ function ServiceTile({
         selected ? "border-accent bg-control-subtle" : "border-separator hover:bg-control-subtle"
       }`}
     >
-      <div className="flex items-start gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
         <div className="min-w-0 flex-1">
-          <Text variant="strong" truncate>{serviceLabel(service, groupsById)}</Text>
-          <Text variant="small" color="secondary" truncate>
+          <Text variant="strong" truncate className="block">{serviceLabel(service, groupsById)}</Text>
+          <Text variant="small" color="secondary" truncate className="block">
             {service.providerIds.map(providerLabel).join(" · ")}
           </Text>
         </div>
@@ -292,68 +292,53 @@ function IncidentRow({ incident, accountsById }: { incident: ObservabilityIncide
   const navigate = useNavigate();
   const Icon = providerIcon(incident.provider);
   const account = accountsById.get(incident.accountId);
-  const createIncident = () => {
-    localStorage.setItem(INCIDENT_CREATE_KEY, JSON.stringify({
-      source: {
-        uid: incident.uid,
-        sourceUid: incident.sourceItemUid,
-        accountId: incident.accountId,
-        provider: incident.provider,
-        title: incident.title,
-        subtitle: incident.subtitle,
-        status: incident.status,
-        severity: incident.severity,
-        updatedAt: incident.updatedAt,
-        url: incident.url,
-        kind: "incident",
-      },
-    }));
-    void navigate({ to: "/incidents" });
-  };
+  const investigate = () => openInvestigation({ kind: "manual", itemUid: incident.sourceItemUid, accountId: incident.accountId, provider: incident.provider, title: incident.title, subtitle: incident.subtitle, ts: incident.updatedAt, url: incident.url });
   const createAlertRule = () => {
     localStorage.setItem(ALERT_RULE_DRAFT_KEY, JSON.stringify(alertRuleDraftFromSource(incident, account)));
     void navigate({ to: "/alerts" });
   };
   return (
-    <div className="flex items-center gap-3 py-2 border-t border-separator first:border-t-0 group">
-      <Icon className="size-4 text-tertiary shrink-0" />
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-separator py-2 first:border-t-0 xl:grid-cols-[auto_minmax(0,1fr)_auto] group">
+      <Icon className="size-4 shrink-0 text-tertiary" />
       <div className="min-w-0 flex-1">
-        <Text variant="strong" truncate>{incident.title}</Text>
-        <Text variant="small" color="secondary" truncate>
+        <Text variant="strong" truncate className="block">{incident.title}</Text>
+        <Text variant="small" color="secondary" truncate className="block">
           {accountLabel(incident.accountId, accountsById)} · {incident.subtitle}
         </Text>
       </div>
-      <Badge color={incident.severity === "critical" || incident.severity === "high" ? "red" : "yellow"}>
-        {incident.status}
-      </Badge>
-      <Text variant="small" color="tertiary" className="tabular-nums shrink-0">
-        {formatRelativeTime(incident.updatedAt)}
-      </Text>
-      <Button
-        variant="transparent"
-        size="small"
-        iconOnly
-        aria-label="Create local incident"
-        title="Create local incident"
-        className="opacity-0 group-hover:opacity-100"
-        onClick={createIncident}
-      >
-        <Search className="size-4" />
-      </Button>
-      <Button
-        variant="transparent"
-        size="small"
-        iconOnly
-        aria-label="Create alert rule"
-        title="Create alert rule"
-        className="opacity-0 group-hover:opacity-100"
-        onClick={createAlertRule}
-      >
-        <Bell className="size-4" />
-      </Button>
-      <Button variant="transparent" size="small" iconOnly aria-label="Open incident" onClick={() => openUrl(incident.url)}>
-        <ExternalLink className="size-4" />
-      </Button>
+      <div className="col-start-2 flex min-w-0 flex-wrap items-center justify-end gap-2 xl:col-start-auto xl:flex-nowrap">
+        <Badge color={incident.severity === "critical" || incident.severity === "high" ? "red" : "yellow"}>
+          {incident.status}
+        </Badge>
+        <Text variant="small" color="tertiary" className="shrink-0 tabular-nums">
+          {formatRelativeTime(incident.updatedAt)}
+        </Text>
+        <Button
+          variant="transparent"
+          size="small"
+          iconOnly
+          aria-label="Investigate incident"
+          title="Investigate incident"
+          className="opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
+          onClick={investigate}
+        >
+          <Search className="size-4" />
+        </Button>
+        <Button
+          variant="transparent"
+          size="small"
+          iconOnly
+          aria-label="Create alert rule"
+          title="Create alert rule"
+          className="opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
+          onClick={createAlertRule}
+        >
+          <Bell className="size-4" />
+        </Button>
+        <Button variant="transparent" size="small" iconOnly aria-label="Open incident" onClick={() => openUrl(incident.url)}>
+          <ExternalLink className="size-4" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -362,66 +347,51 @@ function SignalRow({ signal, accountsById }: { signal: ObservabilitySignal; acco
   const navigate = useNavigate();
   const Icon = providerIcon(signal.provider);
   const account = accountsById.get(signal.accountId);
-  const createIncident = () => {
-    localStorage.setItem(INCIDENT_CREATE_KEY, JSON.stringify({
-      source: {
-        uid: signal.uid,
-        sourceUid: signal.sourceItemUid,
-        accountId: signal.accountId,
-        provider: signal.provider,
-        title: signal.title,
-        subtitle: signal.subtitle,
-        status: signal.status,
-        severity: signal.severity,
-        updatedAt: signal.updatedAt,
-        url: signal.url,
-        kind: "signal",
-      },
-    }));
-    void navigate({ to: "/incidents" });
-  };
+  const investigate = () => openInvestigation({ kind: "manual", itemUid: signal.sourceItemUid, accountId: signal.accountId, provider: signal.provider, title: signal.title, subtitle: signal.subtitle, ts: signal.updatedAt, url: signal.url });
   const createAlertRule = () => {
     localStorage.setItem(ALERT_RULE_DRAFT_KEY, JSON.stringify(alertRuleDraftFromSource(signal, account)));
     void navigate({ to: "/alerts" });
   };
   return (
-    <div className="flex items-center gap-3 py-2 border-t border-separator first:border-t-0 group">
-      <Icon className="size-4 text-tertiary shrink-0" />
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-separator py-2 first:border-t-0 xl:grid-cols-[auto_minmax(0,1fr)_auto] group">
+      <Icon className="size-4 shrink-0 text-tertiary" />
       <div className="min-w-0 flex-1">
-        <Text variant="strong" truncate>{signal.title}</Text>
-        <Text variant="small" color="secondary" truncate>
+        <Text variant="strong" truncate className="block">{signal.title}</Text>
+        <Text variant="small" color="secondary" truncate className="block">
           {accountLabel(signal.accountId, accountsById)} · {signal.subtitle}
         </Text>
       </div>
-      <StatusBadge status={signal.status} />
-      <Text variant="small" color="tertiary" className="tabular-nums shrink-0">
-        {formatRelativeTime(signal.updatedAt)}
-      </Text>
-      <Button
-        variant="transparent"
-        size="small"
-        iconOnly
-        aria-label="Create local incident"
-        title="Create local incident"
-        className="opacity-0 group-hover:opacity-100"
-        onClick={createIncident}
-      >
-        <Search className="size-4" />
-      </Button>
-      <Button
-        variant="transparent"
-        size="small"
-        iconOnly
-        aria-label="Create alert rule"
-        title="Create alert rule"
-        className="opacity-0 group-hover:opacity-100"
-        onClick={createAlertRule}
-      >
-        <Bell className="size-4" />
-      </Button>
-      <Button variant="transparent" size="small" iconOnly aria-label="Open signal" onClick={() => openUrl(signal.url)}>
-        <ExternalLink className="size-4" />
-      </Button>
+      <div className="col-start-2 flex min-w-0 flex-wrap items-center justify-end gap-2 xl:col-start-auto xl:flex-nowrap">
+        <StatusBadge status={signal.status} />
+        <Text variant="small" color="tertiary" className="shrink-0 tabular-nums">
+          {formatRelativeTime(signal.updatedAt)}
+        </Text>
+        <Button
+          variant="transparent"
+          size="small"
+          iconOnly
+          aria-label="Investigate signal"
+          title="Investigate signal"
+          className="opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
+          onClick={investigate}
+        >
+          <Search className="size-4" />
+        </Button>
+        <Button
+          variant="transparent"
+          size="small"
+          iconOnly
+          aria-label="Create alert rule"
+          title="Create alert rule"
+          className="opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
+          onClick={createAlertRule}
+        >
+          <Bell className="size-4" />
+        </Button>
+        <Button variant="transparent" size="small" iconOnly aria-label="Open signal" onClick={() => openUrl(signal.url)}>
+          <ExternalLink className="size-4" />
+        </Button>
+      </div>
     </div>
   );
 }
@@ -447,46 +417,48 @@ function MetricsRow({ summary, accountsById }: { summary: MetricsSummary; accoun
     void navigate({ to: "/alerts" });
   };
   return (
-    <div className="flex items-center gap-3 py-2 border-t border-separator first:border-t-0 group">
-      <Icon className="size-4 text-tertiary shrink-0" />
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-separator py-2 first:border-t-0 xl:grid-cols-[auto_minmax(0,1fr)_auto] group">
+      <Icon className="size-4 shrink-0 text-tertiary" />
       <div className="min-w-0 flex-1">
-        <Text variant="strong" truncate>{summary.title}</Text>
-        <Text variant="small" color="secondary" truncate>{accountLabel(summary.accountId, accountsById)}</Text>
+        <Text variant="strong" truncate className="block">{summary.title}</Text>
+        <Text variant="small" color="secondary" truncate className="block">{accountLabel(summary.accountId, accountsById)}</Text>
       </div>
-      <div className="flex flex-wrap justify-end gap-1.5">
-        {summary.metrics.map((metric) => (
-          <Badge key={metric.label} color="secondary">
-            {metric.label}: {metric.value}{metric.unit ?? ""}
-          </Badge>
-        ))}
+      <div className="col-start-2 flex min-w-0 flex-wrap items-center justify-end gap-2 xl:col-start-auto">
+        <div className="flex min-w-0 flex-wrap justify-end gap-1.5">
+          {summary.metrics.map((metric) => (
+            <Badge key={metric.label} color="secondary">
+              {metric.label}: {metric.value}{metric.unit ?? ""}
+            </Badge>
+          ))}
+        </div>
+        <StatusBadge status={summary.status} />
+        {canCreateAlertRule ? (
+          <Button
+            variant="transparent"
+            size="small"
+            iconOnly
+            aria-label="Create alert rule"
+            title="Create alert rule"
+            className="opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
+            onClick={createAlertRule}
+          >
+            <Bell className="size-4" />
+          </Button>
+        ) : null}
+        {summaryUrl ? (
+          <Button
+            variant="transparent"
+            size="small"
+            iconOnly
+            aria-label="Open metrics"
+            title="Open metrics"
+            className="opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
+            onClick={() => openUrl(summaryUrl)}
+          >
+            <ExternalLink className="size-4" />
+          </Button>
+        ) : null}
       </div>
-      <StatusBadge status={summary.status} />
-      {canCreateAlertRule ? (
-        <Button
-          variant="transparent"
-          size="small"
-          iconOnly
-          aria-label="Create alert rule"
-          title="Create alert rule"
-          className="opacity-0 group-hover:opacity-100"
-          onClick={createAlertRule}
-        >
-          <Bell className="size-4" />
-        </Button>
-      ) : null}
-      {summaryUrl ? (
-        <Button
-          variant="transparent"
-          size="small"
-          iconOnly
-          aria-label="Open metrics"
-          title="Open metrics"
-          className="opacity-0 group-hover:opacity-100"
-          onClick={() => openUrl(summaryUrl)}
-        >
-          <ExternalLink className="size-4" />
-        </Button>
-      ) : null}
     </div>
   );
 }
@@ -526,26 +498,26 @@ function AccountCoverageRow({
       .finally(() => setRefreshing(false));
   };
   return (
-    <div className="grid grid-cols-[auto_1fr_auto_auto_auto] gap-3 py-2 border-t border-separator first:border-t-0 items-center group">
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-separator py-2 first:border-t-0 lg:grid-cols-[auto_minmax(0,1fr)_auto] group">
       <Icon className="size-4 text-tertiary" />
       <div className="min-w-0">
-        <Text variant="strong" truncate>{account.label}</Text>
-        <Text variant="small" color="secondary" truncate>
+        <Text variant="strong" truncate className="block">{account.label}</Text>
+        <Text variant="small" color="secondary" truncate className="block">
           {providerLabel(account.provider)}{account.identity ? ` · ${account.identity}` : ""}{lastError ? ` · ${lastError}` : ""}
         </Text>
       </div>
-      <Text variant="small" color="tertiary" className="tabular-nums">
-        {lastSyncAt ? formatRelativeTime(lastSyncAt) : account.enabled ? "Never synced" : "Disabled"}
-      </Text>
-      <StatusBadge status={status} />
-      <div className="flex items-center justify-end gap-1">
+      <div className="col-start-2 flex min-w-0 flex-wrap items-center justify-end gap-2 lg:col-start-auto lg:flex-nowrap">
+        <Text variant="small" color="tertiary" className="shrink-0 tabular-nums">
+          {lastSyncAt ? formatRelativeTime(lastSyncAt) : account.enabled ? "Never synced" : "Disabled"}
+        </Text>
+        <StatusBadge status={status} />
         <Button
           variant="transparent"
           size="small"
           iconOnly
           aria-label="Edit account"
           title="Edit account"
-          className="opacity-0 group-hover:opacity-100"
+          className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
           onClick={openAccount}
         >
           <Pencil className="size-4" />
@@ -556,7 +528,7 @@ function AccountCoverageRow({
           iconOnly
           aria-label="Refresh account"
           title="Refresh account"
-          className="opacity-0 group-hover:opacity-100"
+          className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100"
           onClick={refreshAccount}
           disabled={refreshing}
         >
@@ -569,10 +541,10 @@ function AccountCoverageRow({
 
 function CheckRow({ check }: { check: HttpCheckResult }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_auto] gap-3 py-2 border-t border-separator first:border-t-0 items-center">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-3 border-t border-separator py-2 first:border-t-0">
       <div className="min-w-0">
-        <Text variant="strong" truncate>{check.name}</Text>
-        <Text variant="small" color="secondary" truncate>{check.error ?? check.url}</Text>
+        <Text variant="strong" truncate className="block">{check.name}</Text>
+        <Text variant="small" color="secondary" truncate className="block">{check.error ?? check.url}</Text>
       </div>
       <Text variant="small" color="tertiary" className="tabular-nums">
         {check.statusCode ? `HTTP ${check.statusCode}` : check.ok ? "OK" : "Down"} · {check.latencyMs}ms
@@ -610,29 +582,26 @@ function TimelineRow({ item, accountsById }: { item: MonitorItem; accountsById: 
   const Icon = providerIcon(item.provider);
   const account = accountsById.get(item.accountId);
   const canCreateAlertRule = item.status !== "success";
-  const createIncident = () => {
-    localStorage.setItem(INCIDENT_CREATE_KEY, JSON.stringify({ monitorItem: item }));
-    void navigate({ to: "/incidents" });
-  };
+  const investigate = () => openInvestigation({ kind: "item", itemUid: item.uid, accountId: item.accountId, provider: item.provider, title: item.title, subtitle: item.subtitle, ts: item.updatedAt, url: item.url });
   const createAlertRule = () => {
     localStorage.setItem(ALERT_RULE_DRAFT_KEY, JSON.stringify(alertRuleDraftFromMonitorItem(item, account)));
     void navigate({ to: "/alerts" });
   };
   return (
-    <div className="grid grid-cols-[7rem_1fr_auto] gap-3 py-2 border-t border-separator first:border-t-0 group">
+    <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 border-t border-separator py-2 first:border-t-0 xl:grid-cols-[7rem_minmax(0,1fr)_auto] group">
       <Text variant="small" color="tertiary" className="tabular-nums">
         {formatRelativeTime(item.updatedAt)}
       </Text>
-      <div className="min-w-0 flex items-center gap-2">
-        <Icon className="size-4 text-tertiary shrink-0" />
+      <div className="flex min-w-0 items-center gap-2">
+        <Icon className="size-4 shrink-0 text-tertiary" />
         <div className="min-w-0">
-          <Text variant="strong" truncate>{item.title}</Text>
-          <Text variant="small" color="secondary" truncate>
+          <Text variant="strong" truncate className="block">{item.title}</Text>
+          <Text variant="small" color="secondary" truncate className="block">
             {accountLabel(item.accountId, accountsById)} · {item.subtitle}
           </Text>
         </div>
       </div>
-      <div className="flex items-center justify-end gap-1">
+      <div className="col-start-2 flex items-center justify-end gap-1 xl:col-start-auto">
         <StatusBadge status={item.status} />
         <Button
           variant="transparent"
@@ -640,8 +609,8 @@ function TimelineRow({ item, accountsById }: { item: MonitorItem; accountsById: 
           iconOnly
           aria-label="Start investigation"
           title="Start investigation"
-          className="opacity-0 group-hover:opacity-100"
-          onClick={createIncident}
+          className="opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
+          onClick={investigate}
         >
           <Search className="size-4" />
         </Button>
@@ -652,7 +621,7 @@ function TimelineRow({ item, accountsById }: { item: MonitorItem; accountsById: 
             iconOnly
             aria-label="Create alert rule"
             title="Create alert rule"
-            className="opacity-0 group-hover:opacity-100"
+            className="opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
             onClick={createAlertRule}
           >
             <Bell className="size-4" />
@@ -664,7 +633,7 @@ function TimelineRow({ item, accountsById }: { item: MonitorItem; accountsById: 
           iconOnly
           aria-label="Open activity"
           title="Open activity"
-          className="opacity-0 group-hover:opacity-100"
+          className="opacity-100 xl:opacity-0 xl:group-hover:opacity-100"
           onClick={() => openUrl(item.url)}
         >
           <ExternalLink className="size-4" />
@@ -909,11 +878,11 @@ function DependencyOverview({
       {rows.map((row) => (
         <div
           key={`${row.service.id}:${row.dependency}`}
-          className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 py-2 border-t border-separator first:border-t-0 items-center"
+          className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-3 border-t border-separator py-2 first:border-t-0"
         >
           <div className="min-w-0">
-            <Text variant="strong" truncate>{serviceLabel(row.service, groupsById)}</Text>
-            <Text variant="small" color="secondary" truncate>
+            <Text variant="strong" truncate className="block">{serviceLabel(row.service, groupsById)}</Text>
+            <Text variant="small" color="secondary" truncate className="block">
               {[
                 row.metadata.owner,
                 SERVICE_TIERS.find((option) => option.value === row.metadata.tier)?.label,

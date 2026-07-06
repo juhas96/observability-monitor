@@ -4,6 +4,7 @@ import { BellPlus, CircleHelp, Gauge, GitCommitHorizontal, LayoutDashboard, Line
 import { SplitView, Sidebar, SidebarList, SidebarListItem, Status } from "@glaze/core/components";
 import { useTheme, useConnection, useEnvironment } from "@glaze/core/hooks";
 import { CommandPalette } from "./components/command-palette";
+import { InvestigationDrawer } from "./components/investigation-drawer";
 
 interface NavItem {
   path: string;
@@ -94,6 +95,7 @@ export function RootView() {
       </SplitView>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
+      <InvestigationDrawer />
 
       <div className="flex flex-col items-end gap-1 mt-2 fixed bottom-12 right-2">
         {import.meta.env.DEV ? (

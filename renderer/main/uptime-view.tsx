@@ -21,6 +21,7 @@ import {
 } from "@glaze/core/components";
 
 import { LineChart, type ChartPoint } from "./components/charts";
+import { openInvestigation } from "./components/investigation";
 import {
   ALL,
   type AppliedFilter,
@@ -50,7 +51,6 @@ const FILTER_KEY = "uptime.filters.v1";
 const FILTER_PRESET_KEY = `${FILTER_KEY}.presets`;
 const UPTIME_DRILLDOWN_KEY = "uptime.drilldown.v1";
 const UPTIME_CREATE_KEY = "uptime.create.v1";
-const INCIDENT_CREATE_KEY = "incidents.create.v1";
 const ALERT_RULE_DRAFT_KEY = "alerts.draft.v1";
 
 interface UptimeFilters {
@@ -336,21 +336,7 @@ function CheckCard({
   const openEndpoint = () => {
     void monitorApi.openExternal(check.url).catch((error) => toast.error(error instanceof Error ? error.message : String(error)));
   };
-  const createIncident = () => {
-    localStorage.setItem(INCIDENT_CREATE_KEY, JSON.stringify({
-      uptimeCheck: {
-        checkId: check.id,
-        name: check.name,
-        url: check.url,
-        status: result ? (result.ok ? "up" : "down") : "pending",
-        checkedAt: result?.checkedAt,
-        statusCode: result?.statusCode,
-        latencyMs: result?.latencyMs,
-        error: result?.error,
-      },
-    }));
-    void navigate({ to: "/incidents" });
-  };
+  const investigate = () => openInvestigation({ kind: "manual", groupId: check.groupId, title: check.name, subtitle: result?.error ?? check.url, ts: result?.checkedAt, url: check.url });
 
   return (
     <div className="rounded-lg border border-separator p-3 flex flex-col gap-3">
@@ -365,7 +351,7 @@ function CheckCard({
           <ExternalLink className="size-4" />
         </Button>
         {result && !result.ok ? (
-          <Button variant="transparent" size="small" iconOnly aria-label="Start incident" title="Start incident" onClick={createIncident}>
+          <Button variant="transparent" size="small" iconOnly aria-label="Investigate check" title="Investigate check" onClick={investigate}>
             <Search className="size-4" />
           </Button>
         ) : null}

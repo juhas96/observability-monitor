@@ -31,13 +31,15 @@ export function AccountSection({
 
   return (
     <section className="flex flex-col gap-1">
-      <div className="flex items-center gap-2 px-2 pt-2">
-        <Icon className="size-4 text-secondary shrink-0" />
-        <Text variant="strong">{account.label}</Text>
-        <Text variant="small" color="tertiary">
-          {accountIdentity(account)}
-        </Text>
-        <div className="ml-auto flex items-center gap-2">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2 pt-2">
+        <Icon className="size-4 shrink-0 text-secondary" />
+        <div className="min-w-0">
+          <Text variant="strong" truncate className="block">{account.label}</Text>
+          <Text variant="small" color="tertiary" truncate className="block">
+            {accountIdentity(account)}
+          </Text>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
           {status?.lastSyncAt ? (
             <Text variant="small" color="tertiary" className="tabular-nums">
               {formatRelativeTime(status.lastSyncAt)}
@@ -49,9 +51,9 @@ export function AccountSection({
       <Separator />
 
       {status?.lastError ? (
-        <div className="flex items-center gap-2 px-2 py-2">
-          <AlertCircle className="size-4 text-support-red shrink-0" />
-          <Text variant="small" color="secondary">
+        <div className="flex min-w-0 items-center gap-2 px-2 py-2">
+          <AlertCircle className="size-4 shrink-0 text-support-red" />
+          <Text variant="small" color="secondary" truncate className="block">
             {status.lastError}
           </Text>
         </div>
