@@ -229,8 +229,8 @@ export function AddAccountDialog({
                     {area.defaultState === "always" ? "always-on" : area.defaultState}
                   </Badge>
                   <div className="min-w-0">
-                    <Text variant="small" color="secondary">{area.label}</Text>
-                    <Text variant="small" color="tertiary">{area.guidance}</Text>
+                    <Text variant="small" color="secondary" className="block">{area.label}</Text>
+                    <Text variant="small" color="tertiary" className="block">{area.guidance}</Text>
                   </div>
                 </div>
               ))}

@@ -151,6 +151,8 @@ async function main(): Promise<void> {
   const rendererIpc = await readRepoFile("renderer/main/ipc.ts");
   const settingsView = await readRepoFile("renderer/settings/settings-view.tsx");
   const notificationChannelsView = await readRepoFile("renderer/settings/notification-channels.tsx");
+  const channelHandlers = await readRepoFile("main/handlers/channels.ts");
+  const dispatchService = await readRepoFile("main/services/dispatch.ts");
   const handlersIndex = await readRepoFile("main/handlers/index.ts");
   const setupHandlers = await readRepoFile("main/handlers/setup.ts");
   const router = await readRepoFile("renderer/main/router.tsx");
@@ -353,6 +355,11 @@ async function main(): Promise<void> {
     "Filters, presets, and exports",
     "Common issues",
   ], "help-view.tsx must document every main user-facing surface and setup/troubleshooting area");
+  checkIncludesAll(helpView, [
+    "Slack, Teams, or webhooks",
+    "create an incoming webhook with Workflows",
+    "teams",
+  ], "help-view.tsx must document Teams notification-channel setup");
   check(helpView.includes("useProviders") && helpView.includes("provider.fields") && helpView.includes("ProviderReference") && providersHook.includes("monitorApi.listProviders") && rendererIpc.includes('"providers:list"'), "Help provider setup reference must be rendered from providers:list metadata instead of hardcoded credential copies");
   check(agentsDoc.includes("user-facing functionality change") && agentsDoc.includes("in-app Help docs"), "AGENTS.md must require in-app Help docs updates for user-facing functionality changes");
   check(commandCenterView.includes("useMonitorData") && commandCenterView.includes("useHistoryEvents") && commandCenterView.includes("useRuleStates"), "command-center-view.tsx must summarize real monitor, retained-history, and alert-rule state");
@@ -462,6 +469,28 @@ async function main(): Promise<void> {
     'invoke("channels:delete"',
     "hasUrl",
   ], "notification-channels.tsx must wire channel list/save/test/delete without reading webhook URLs");
+  checkIncludesAll(backendTypes, [
+    'export type ChannelType = "slack" | "teams" | "webhook";',
+    "interface Channel",
+  ], "backend channel types must include first-class Teams notification channels");
+  checkIncludesAll(rendererTypes, [
+    'export type ChannelType = "slack" | "teams" | "webhook";',
+    "interface ChannelView",
+  ], "renderer channel types must include first-class Teams notification channels");
+  checkIncludesAll(channelHandlers, [
+    'const CHANNEL_TYPES: ChannelType[] = ["slack", "teams", "webhook"];',
+    '"channels:save"',
+  ], "channel IPC handlers must accept Teams channels without changing the URL write-only boundary");
+  checkIncludesAll(setupHandlers, [
+    'channel.type === "teams" ? "teams"',
+    "channels: channels.map((channel) => ({ ...channel, enabled: false }))",
+  ], "portable setup import/export must preserve Teams channel metadata without exporting URLs");
+  checkIncludesAll(dispatchService, [
+    'if (channel.type === "teams")',
+    'contentType: "application/vnd.microsoft.card.adaptive"',
+    'version: "1.0"',
+    'type: "FactSet"',
+  ], "dispatch.ts must send Teams channels as Adaptive Card payloads");
   checkIncludesAll(accountsView, [
     'const FILTER_KEY = "accounts.filters.v1";',
     'const FILTER_PRESET_KEY = `${FILTER_KEY}.presets`;',
@@ -487,12 +516,16 @@ async function main(): Promise<void> {
   checkIncludesAll(notificationChannelsView, [
     'const FILTER_KEY = "notificationChannels.filters.v1";',
     'const FILTER_PRESET_KEY = `${FILTER_KEY}.presets`;',
+    'type ChannelType = "slack" | "teams" | "webhook";',
+    "function channelTypeLabel",
     "search: string;",
     'type: "all" | ChannelType;',
     'enabled: "all" | "enabled" | "disabled";',
     'url: "all" | "configured" | "missing";',
     'event: "all" | DispatchEventKind;',
     "const filteredChannels = channels.filter",
+    '{ value: "teams", label: "Teams" }',
+    '<SelectItem value="teams">Teams</SelectItem>',
     "if (!haystack.includes(search)) return false;",
     "filters.type !== ALL && channel.type !== filters.type",
     "filters.enabled === \"enabled\" && !channel.enabled",

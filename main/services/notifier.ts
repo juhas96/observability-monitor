@@ -74,7 +74,7 @@ export async function notifyTransitions(transitions: StatusTransition[], setting
       }
     }
 
-    // Forward to configured Slack/webhook channels (never throws into the poll cycle).
+    // Forward to configured Slack, Teams, and webhook channels (never throws into the poll cycle).
     void dispatch({
       kind: isFailure ? "failure" : "success",
       title: `${isFailure ? "Failure" : "Success"}: ${t.item.title}`,

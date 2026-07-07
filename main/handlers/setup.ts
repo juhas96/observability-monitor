@@ -343,7 +343,7 @@ function asChannel(value: unknown): Channel | null {
   const channel = asRecord(value);
   const id = clean(channel.id);
   const name = clean(channel.name);
-  const type = channel.type === "webhook" ? "webhook" : channel.type === "slack" ? "slack" : undefined;
+  const type = channel.type === "webhook" ? "webhook" : channel.type === "slack" ? "slack" : channel.type === "teams" ? "teams" : undefined;
   if (!id || !name || !type) return null;
   const events = Array.isArray(channel.events)
     ? channel.events.filter((event): event is Channel["events"][number] => typeof event === "string" && DISPATCH_EVENT_KINDS.has(event))

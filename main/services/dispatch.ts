@@ -1,5 +1,5 @@
 /**
- * Outbound notification dispatch. Forwards events to enabled Slack/webhook
+ * Outbound notification dispatch. Forwards events to enabled Slack, Teams, and webhook
  * channels. Never throws into the caller (poll cycle) — delivery failures are
  * logged and swallowed.
  */
@@ -26,10 +26,72 @@ function contextLines(event: DispatchEvent): string[] {
   return lines.filter((line): line is string => Boolean(line));
 }
 
+function fact(name: string, value: string | undefined): { title: string; value: string } | null {
+  return value ? { title: name, value } : null;
+}
+
+function teamsPayloadFor(event: DispatchEvent): string {
+  const context = event.context;
+  const facts = [
+    fact("Kind", event.kind),
+    fact("Service", context?.serviceName),
+    fact("Owner", context?.owner),
+    fact("Tier", context?.tier),
+    fact("Dependencies", context?.dependencies && context.dependencies.length > 0 ? context.dependencies.join(", ") : undefined),
+    fact("Runbook", context?.runbookUrl),
+    fact("Dashboard", context?.dashboardUrl),
+    fact("Repository", context?.repositoryUrl),
+    fact("URL", event.url),
+    fact("At", new Date().toISOString()),
+  ].filter((item): item is { title: string; value: string } => item !== null);
+
+  return JSON.stringify({
+    type: "message",
+    attachments: [
+      {
+        contentType: "application/vnd.microsoft.card.adaptive",
+        content: {
+          type: "AdaptiveCard",
+          version: "1.0",
+          body: [
+            {
+              type: "TextBlock",
+              text: event.title,
+              weight: "Bolder",
+              size: "Medium",
+              wrap: true,
+            },
+            ...(event.body
+              ? [
+                  {
+                    type: "TextBlock",
+                    text: event.body,
+                    wrap: true,
+                  },
+                ]
+              : []),
+            ...(facts.length > 0
+              ? [
+                  {
+                    type: "FactSet",
+                    facts,
+                  },
+                ]
+              : []),
+          ],
+        },
+      },
+    ],
+  });
+}
+
 function payloadFor(channel: Channel, event: DispatchEvent): string {
   if (channel.type === "slack") {
     const text = [event.title, event.body, ...contextLines(event), event.url].filter(Boolean).join("\n");
     return JSON.stringify({ text });
+  }
+  if (channel.type === "teams") {
+    return teamsPayloadFor(event);
   }
   return JSON.stringify({
     kind: event.kind,

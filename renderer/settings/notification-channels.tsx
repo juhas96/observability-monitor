@@ -29,7 +29,7 @@ import {
 } from "../main/components/filters";
 import { downloadCsv } from "../main/utils/csv";
 
-type ChannelType = "slack" | "webhook";
+type ChannelType = "slack" | "teams" | "webhook";
 type DispatchEventKind = "failure" | "success" | "alert" | "recovery" | "digest";
 
 interface ChannelView {
@@ -70,6 +70,18 @@ const DEFAULT_FILTERS: ChannelFilters = {
 
 const invoke = <T,>(channel: string, ...args: unknown[]): Promise<T> =>
   window.glazeAPI.glaze.ipc.invoke<T>(channel, ...args);
+
+function channelTypeLabel(type: ChannelType): string {
+  if (type === "slack") return "Slack";
+  if (type === "teams") return "Teams";
+  return "Webhook";
+}
+
+function placeholderForType(type: ChannelType): string {
+  if (type === "slack") return "https://hooks.slack.com/services/…";
+  if (type === "teams") return "https://...";
+  return "https://example.com/webhook";
+}
 
 function downloadChannelsCsv(channels: ChannelView[]): void {
   const columns = ["id", "name", "type", "enabled", "urlConfigured", "events"];
@@ -175,6 +187,7 @@ export function NotificationChannels() {
   const typeOptions = [
     { value: ALL, label: "All channel types" },
     { value: "slack", label: "Slack" },
+    { value: "teams", label: "Teams" },
     { value: "webhook", label: "Webhook" },
   ];
   const enabledOptions = [
@@ -200,7 +213,7 @@ export function NotificationChannels() {
         .join(" ");
       const haystack = [
         channel.name,
-        channel.type === "slack" ? "Slack" : "Webhook",
+        channelTypeLabel(channel.type),
         channel.enabled ? "enabled" : "disabled",
         channel.hasUrl ? "url configured" : "url missing",
         subscribedEvents,
@@ -238,10 +251,10 @@ export function NotificationChannels() {
   };
 
   return (
-    <FieldSet title="Notification channels" description="Forward events to Slack or a generic webhook.">
+    <FieldSet title="Notification channels" description="Forward events to Slack, Teams, or a generic webhook.">
       <FieldGroup>
         {channels.length === 0 ? (
-          <EmptyState title="No channels" description="Add a Slack incoming webhook or a generic webhook URL." />
+          <EmptyState title="No channels" description="Add a Slack, Teams, or generic webhook URL." />
         ) : (
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
@@ -278,7 +291,7 @@ export function NotificationChannels() {
             {filteredChannels.map((channel) => (
               <div key={channel.id} className="flex flex-col gap-2 rounded-lg border border-separator p-3">
                 <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{channel.type === "slack" ? "Slack" : "Webhook"}</Badge>
+                  <Badge variant="secondary">{channelTypeLabel(channel.type)}</Badge>
                   <Text weight="medium" className="flex-1 truncate">
                     {channel.name}
                   </Text>
@@ -322,13 +335,14 @@ export function NotificationChannels() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="slack">Slack</SelectItem>
+                  <SelectItem value="teams">Teams</SelectItem>
                   <SelectItem value="webhook">Webhook</SelectItem>
                 </SelectContent>
               </Select>
               <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} className="flex-1" />
             </div>
             <Input
-              placeholder={type === "slack" ? "https://hooks.slack.com/services/…" : "https://example.com/webhook"}
+              placeholder={placeholderForType(type)}
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />

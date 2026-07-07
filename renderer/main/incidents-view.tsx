@@ -562,8 +562,8 @@ function ServiceIncidentContext({
     <section className="rounded-md border border-separator p-3 flex flex-col gap-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <Text variant="strong" truncate>{service?.name ?? metadata?.serviceId ?? "Service context"}</Text>
-          <Text variant="small" color="secondary" truncate>
+          <Text variant="strong" truncate className="block">{service?.name ?? metadata?.serviceId ?? "Service context"}</Text>
+          <Text variant="small" color="secondary" truncate className="block">
             {metadata?.owner ? `Owner: ${metadata.owner}` : "No owner assigned"}
             {metadata?.tier ? ` · ${SERVICE_TIERS[metadata.tier] ?? metadata.tier}` : ""}
           </Text>
@@ -834,21 +834,21 @@ function InvestigationWorkspace({
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-        <div className="rounded-md border border-separator p-2">
-          <Text variant="small" color="tertiary">Deploys</Text>
-          <Text variant="title">{deploys.length}</Text>
+        <div className="flex min-w-0 flex-col gap-1 rounded-md border border-separator p-2">
+          <Text variant="small" color="tertiary" className="block">Deploys</Text>
+          <Text variant="title" className="block">{deploys.length}</Text>
         </div>
-        <div className="rounded-md border border-separator p-2">
-          <Text variant="small" color="tertiary">Failures</Text>
-          <Text variant="title">{failures.length}</Text>
+        <div className="flex min-w-0 flex-col gap-1 rounded-md border border-separator p-2">
+          <Text variant="small" color="tertiary" className="block">Failures</Text>
+          <Text variant="title" className="block">{failures.length}</Text>
         </div>
-        <div className="rounded-md border border-separator p-2">
-          <Text variant="small" color="tertiary">Alerts</Text>
-          <Text variant="title">{alerts.length}</Text>
+        <div className="flex min-w-0 flex-col gap-1 rounded-md border border-separator p-2">
+          <Text variant="small" color="tertiary" className="block">Alerts</Text>
+          <Text variant="title" className="block">{alerts.length}</Text>
         </div>
-        <div className="rounded-md border border-separator p-2">
-          <Text variant="small" color="tertiary">Recoveries</Text>
-          <Text variant="title">{recoveries.length}</Text>
+        <div className="flex min-w-0 flex-col gap-1 rounded-md border border-separator p-2">
+          <Text variant="small" color="tertiary" className="block">Recoveries</Text>
+          <Text variant="title" className="block">{recoveries.length}</Text>
         </div>
       </div>
 
@@ -1104,7 +1104,7 @@ function LocalIncidentFollowUps({
             {item.done ? <CheckCircle2 className="mt-0.5 size-4 text-support-green" /> : <AlertCircle className="mt-0.5 size-4 text-tertiary" />}
             <div className="min-w-0">
               <Text variant="small" truncate className="block">{item.label}</Text>
-              <Text variant="small" color="tertiary" className="min-w-0">{item.detail}</Text>
+              <Text variant="small" color="tertiary" className="block min-w-0">{item.detail}</Text>
             </div>
             {!item.done && item.onAction ? (
               <Button variant="glass" size="small" onClick={item.onAction}>
@@ -1306,8 +1306,8 @@ function DetailPanel({
   if (!item && !localIncident) {
     return (
       <div className="rounded-lg border border-separator p-4">
-        <Text variant="strong">No item selected</Text>
-        <Text variant="small" color="secondary">Select an alert or incident to inspect its timeline.</Text>
+        <Text variant="strong" className="block">No item selected</Text>
+        <Text variant="small" color="secondary" className="block">Select an alert or incident to inspect its timeline.</Text>
       </div>
     );
   }
@@ -1367,8 +1367,8 @@ function DetailPanel({
       <div className="rounded-lg border border-separator p-3 flex flex-col gap-4">
         <div className="flex items-start gap-2">
           <div className="min-w-0 flex-1">
-            <Text variant="title" truncate>{localIncident.title}</Text>
-            <Text variant="small" color="secondary">
+            <Text variant="title" truncate className="block">{localIncident.title}</Text>
+            <Text variant="small" color="secondary" className="block">
               {account?.label ?? (localIncident.provider ? providerLabel(localIncident.provider) : "Manual incident")}
               {localIncident.assignee ? ` · ${localIncident.assignee}` : ""}
             </Text>

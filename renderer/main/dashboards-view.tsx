@@ -1396,9 +1396,9 @@ function StatsPanel({ result }: { result: DashboardPanelResult }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
       {stats.map((stat) => (
-        <div key={stat.label} className="rounded-md border border-separator p-3">
-          <Text variant="small" color="tertiary">{stat.label}</Text>
-          <Text variant="title">{stat.value}{stat.unit ? ` ${stat.unit}` : ""}</Text>
+        <div key={stat.label} className="flex min-w-0 flex-col gap-1 rounded-md border border-separator p-3">
+          <Text variant="small" color="tertiary" className="block">{stat.label}</Text>
+          <Text variant="title" className="block">{stat.value}{stat.unit ? ` ${stat.unit}` : ""}</Text>
         </div>
       ))}
     </div>
@@ -1741,22 +1741,23 @@ function TraceRowsPanel({ result }: { result: DashboardPanelResult }) {
             <div key={index} className="rounded-md border border-separator p-3">
               <div className="flex min-w-0 items-start gap-2">
                 <div className="min-w-0 flex-1">
-                  <Text variant="strong" truncate>{title}</Text>
-                  <Text variant="small" color="secondary" truncate>{[service, traceId].filter(Boolean).join(" · ")}</Text>
-                  {timestamp ? <Text variant="small" color="tertiary">{new Date(timestamp).toLocaleString()}</Text> : null}
+                  <Text variant="strong" truncate className="block">{title}</Text>
+                  <Text variant="small" color="secondary" truncate className="block">{[service, traceId].filter(Boolean).join(" · ")}</Text>
+                  {timestamp ? <Text variant="small" color="tertiary" className="block">{new Date(timestamp).toLocaleString()}</Text> : null}
                 </div>
-                {duration ? <Badge color="blue">{duration} ms</Badge> : null}
+                {duration ? <span className="shrink-0"><Badge color="blue">{duration} ms</Badge></span> : null}
                 <Button
                   variant="transparent"
                   size="small"
                   iconOnly
                   aria-label="Investigate trace"
+                  className="shrink-0"
                   onClick={() => openInvestigation({ kind: "manual", accountId: result.accountId, provider: result.provider, title, subtitle: service || traceId, ts: timestamp, url: typeof row.__url === "string" ? row.__url : undefined })}
                 >
                   <Search className="size-4" />
                 </Button>
                 {typeof row.__url === "string" && row.__url.trim() !== "" ? (
-                  <Button variant="transparent" size="small" iconOnly aria-label={typeof row.__urlLabel === "string" ? row.__urlLabel : "Open trace"} onClick={() => void monitorApi.openExternal(row.__url ?? "")}>
+                  <Button variant="transparent" size="small" iconOnly className="shrink-0" aria-label={typeof row.__urlLabel === "string" ? row.__urlLabel : "Open trace"} onClick={() => void monitorApi.openExternal(row.__url ?? "")}>
                     <ExternalLink className="size-4" />
                   </Button>
                 ) : null}
@@ -2034,9 +2035,9 @@ function DashboardTemplateDialog({
               <div className="flex items-start gap-2">
                 <LayoutTemplate className="mt-0.5 size-4 shrink-0 text-tertiary" />
                 <div className="min-w-0">
-                  <Text variant="strong">{template.name}</Text>
-                  <Text variant="small" color="secondary">{template.description}</Text>
-                  <Text variant="small" color="tertiary">
+                  <Text variant="strong" className="block">{template.name}</Text>
+                  <Text variant="small" color="secondary" className="block">{template.description}</Text>
+                  <Text variant="small" color="tertiary" className="block">
                     {template.buildPanels({ capabilities }).length} panels · {template.range}{template.refreshSeconds ? ` · refresh ${template.refreshSeconds}s` : ""}
                   </Text>
                 </div>
@@ -2593,9 +2594,9 @@ export function DashboardsView() {
           <>
             <div className="flex items-start gap-3">
               <div className="min-w-0 flex-1">
-                <Text variant="title">{dashboard.name}</Text>
-                {dashboard.description ? <Text variant="small" color="secondary">{dashboard.description}</Text> : null}
-                <Text variant="small" color="tertiary">Default range {dashboard.range}{dashboard.refreshSeconds ? ` · refresh ${dashboard.refreshSeconds}s` : ""}</Text>
+                <Text variant="title" className="block">{dashboard.name}</Text>
+                {dashboard.description ? <Text variant="small" color="secondary" className="block">{dashboard.description}</Text> : null}
+                <Text variant="small" color="tertiary" className="block">Default range {dashboard.range}{dashboard.refreshSeconds ? ` · refresh ${dashboard.refreshSeconds}s` : ""}</Text>
                 {variableBadges.length > 0 ? (
                   <div className="mt-2 flex flex-wrap gap-1">
                     {variableBadges.map((filter) => (

@@ -766,8 +766,8 @@ export const MIN_POLL_INTERVAL_SECONDS = 30;
 export const MIN_HISTORY_RETENTION_DAYS = 1;
 export const MAX_HISTORY_RETENTION_DAYS = 90;
 
-/** Notification channel that forwards events to a Slack incoming webhook or generic webhook. */
-export type ChannelType = "slack" | "webhook";
+/** Notification channel that forwards events to Slack, Teams, or a generic webhook. */
+export type ChannelType = "slack" | "teams" | "webhook";
 
 /** Event categories a channel can subscribe to. */
 export type DispatchEventKind = "failure" | "success" | "alert" | "recovery" | "digest";

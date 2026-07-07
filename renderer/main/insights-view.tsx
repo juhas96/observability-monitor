@@ -223,10 +223,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function StatCard({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <div className="rounded-lg border border-separator p-3">
-      <Text variant="small" color="tertiary">{label}</Text>
-      <Text variant="title">{value}</Text>
-      {detail ? <Text variant="small" color="secondary">{detail}</Text> : null}
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-separator p-3">
+      <Text variant="small" color="tertiary" className="block">{label}</Text>
+      <Text variant="title" className="block">{value}</Text>
+      {detail ? <Text variant="small" color="secondary" className="block">{detail}</Text> : null}
     </div>
   );
 }
@@ -397,8 +397,8 @@ function SloCard({ status, onEdit }: { status: SloStatus; onEdit: () => void }) 
     <div className="rounded-lg border border-separator p-3 flex flex-col gap-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <Text variant="strong" truncate>{status.slo.name}</Text>
-          <Text variant="small" color="secondary">{scope} · {status.slo.target}% over {status.slo.windowDays}d</Text>
+          <Text variant="strong" truncate className="block">{status.slo.name}</Text>
+          <Text variant="small" color="secondary" className="block">{scope} · {status.slo.target}% over {status.slo.windowDays}d</Text>
         </div>
         <Badge color={status.atRisk ? "red" : "secondary"}>{status.atRisk ? "At risk" : "Tracking"}</Badge>
         {targetPayload ? (

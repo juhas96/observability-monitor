@@ -13,7 +13,7 @@ export interface ChannelView extends Channel {
   hasUrl: boolean;
 }
 
-const CHANNEL_TYPES: ChannelType[] = ["slack", "webhook"];
+const CHANNEL_TYPES: ChannelType[] = ["slack", "teams", "webhook"];
 const EVENT_KINDS: DispatchEventKind[] = ["failure", "success", "alert", "recovery", "digest"];
 
 function asRecord(value: unknown): Record<string, unknown> {

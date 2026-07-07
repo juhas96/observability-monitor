@@ -731,7 +731,7 @@ export interface RulePreview {
   noDataReason?: string;
 }
 
-export type ChannelType = "slack" | "webhook";
+export type ChannelType = "slack" | "teams" | "webhook";
 export type DispatchEventKind = "failure" | "success" | "alert" | "recovery" | "digest";
 
 export interface DispatchEventContext {

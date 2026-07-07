@@ -620,8 +620,8 @@ function AlertDialog({
                 className="rounded-md border border-separator bg-bg-secondary p-2 text-left transition hover:border-fg-tertiary"
                 onClick={() => applyTemplate(template)}
               >
-                <Text variant="small" className="font-medium">{template.title}</Text>
-                <Text variant="small" color="tertiary">{template.description}</Text>
+                <Text variant="small" className="block font-medium">{template.title}</Text>
+                <Text variant="small" color="tertiary" className="block">{template.description}</Text>
               </button>
             ))}
           </div>
@@ -709,7 +709,7 @@ function AlertDialog({
         <Field label="Delivery channels" orientation="vertical" className="p-0">
           <div className="flex flex-col gap-2 rounded-md border border-separator p-2">
             {channels.length === 0 ? (
-              <Text variant="small" color="secondary">No Slack or webhook channels are configured.</Text>
+              <Text variant="small" color="secondary">No Slack, Teams, or webhook channels are configured.</Text>
             ) : (
               channels.map((channel) => (
                 <div key={channel.id} className="grid grid-cols-[auto_1fr_auto] gap-2 items-center">
@@ -719,9 +719,9 @@ function AlertDialog({
                     aria-label={`Route this rule to ${channel.name}`}
                   />
                   <div className="min-w-0">
-                    <Text variant="small" truncate>{channel.name}</Text>
-                    <Text variant="small" color="tertiary" truncate>
-                      {channel.type === "slack" ? "Slack" : "Webhook"}{!channel.enabled ? " · disabled" : ""}{!channel.hasUrl ? " · missing URL" : ""}
+                    <Text variant="small" truncate className="block">{channel.name}</Text>
+                    <Text variant="small" color="tertiary" truncate className="block">
+                      {channel.type === "slack" ? "Slack" : channel.type === "teams" ? "Teams" : "Webhook"}{!channel.enabled ? " · disabled" : ""}{!channel.hasUrl ? " · missing URL" : ""}
                     </Text>
                   </div>
                   {channel.events.includes("alert") || channel.events.includes("recovery") ? (
@@ -762,21 +762,21 @@ function AlertDialog({
           ) : (
             <div className="mt-2 flex flex-col gap-2">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <div className="rounded-md bg-bg-secondary p-2">
-                  <Text variant="small" color="tertiary">Samples</Text>
-                  <Text variant="strong">{historySimulation.evaluated}</Text>
+                <div className="flex min-w-0 flex-col gap-1 rounded-md bg-bg-secondary p-2">
+                  <Text variant="small" color="tertiary" className="block">Samples</Text>
+                  <Text variant="strong" className="block">{historySimulation.evaluated}</Text>
                 </div>
-                <div className="rounded-md bg-bg-secondary p-2">
-                  <Text variant="small" color="tertiary">Breaches</Text>
-                  <Text variant="strong">{historySimulation.thresholdApplied ? historySimulation.breaches : "—"}</Text>
+                <div className="flex min-w-0 flex-col gap-1 rounded-md bg-bg-secondary p-2">
+                  <Text variant="small" color="tertiary" className="block">Breaches</Text>
+                  <Text variant="strong" className="block">{historySimulation.thresholdApplied ? historySimulation.breaches : "—"}</Text>
                 </div>
-                <div className="rounded-md bg-bg-secondary p-2">
-                  <Text variant="small" color="tertiary">Latest</Text>
-                  <Text variant="strong">{formatRuleValue(metric, historySimulation.latestValue)}</Text>
+                <div className="flex min-w-0 flex-col gap-1 rounded-md bg-bg-secondary p-2">
+                  <Text variant="small" color="tertiary" className="block">Latest</Text>
+                  <Text variant="strong" className="block">{formatRuleValue(metric, historySimulation.latestValue)}</Text>
                 </div>
-                <div className="rounded-md bg-bg-secondary p-2">
-                  <Text variant="small" color="tertiary">Max</Text>
-                  <Text variant="strong">{formatRuleValue(metric, historySimulation.maxValue)}</Text>
+                <div className="flex min-w-0 flex-col gap-1 rounded-md bg-bg-secondary p-2">
+                  <Text variant="small" color="tertiary" className="block">Max</Text>
+                  <Text variant="strong" className="block">{formatRuleValue(metric, historySimulation.maxValue)}</Text>
                 </div>
               </div>
               {historySimulation.suggestedThreshold != null ? (
@@ -819,17 +819,17 @@ function AlertDialog({
               <Text variant="small" color="tertiary">No retained check samples for this check yet.</Text>
             ) : (
               <div className="mt-2 grid grid-cols-3 gap-2">
-                <div className="rounded-md bg-bg-secondary p-2">
-                  <Text variant="small" color="tertiary">Uptime</Text>
-                  <Text variant="strong">{checkHistory.uptime == null ? "—" : `${(checkHistory.uptime * 100).toFixed(2)}%`}</Text>
+                <div className="flex min-w-0 flex-col gap-1 rounded-md bg-bg-secondary p-2">
+                  <Text variant="small" color="tertiary" className="block">Uptime</Text>
+                  <Text variant="strong" className="block">{checkHistory.uptime == null ? "—" : `${(checkHistory.uptime * 100).toFixed(2)}%`}</Text>
                 </div>
-                <div className="rounded-md bg-bg-secondary p-2">
-                  <Text variant="small" color="tertiary">Down samples</Text>
-                  <Text variant="strong">{checkDownSamples}</Text>
+                <div className="flex min-w-0 flex-col gap-1 rounded-md bg-bg-secondary p-2">
+                  <Text variant="small" color="tertiary" className="block">Down samples</Text>
+                  <Text variant="strong" className="block">{checkDownSamples}</Text>
                 </div>
-                <div className="rounded-md bg-bg-secondary p-2">
-                  <Text variant="small" color="tertiary">Avg latency</Text>
-                  <Text variant="strong">{checkHistory.avgLatencyMs == null ? "—" : `${checkHistory.avgLatencyMs}ms`}</Text>
+                <div className="flex min-w-0 flex-col gap-1 rounded-md bg-bg-secondary p-2">
+                  <Text variant="small" color="tertiary" className="block">Avg latency</Text>
+                  <Text variant="strong" className="block">{checkHistory.avgLatencyMs == null ? "—" : `${checkHistory.avgLatencyMs} ms`}</Text>
                 </div>
               </div>
             )
@@ -842,8 +842,8 @@ function AlertDialog({
               {recentHistoryEvents.map((event) => (
                 <div key={event.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
                   <Badge color={event.type === "failure" || event.type === "incident" ? "red" : event.type === "alert" ? "yellow" : "secondary"}>{event.type}</Badge>
-                  <Text variant="small" truncate>{event.title}</Text>
-                  <Text variant="small" color="tertiary">{shortTime(event.ts)}</Text>
+                  <Text variant="small" truncate className="block">{event.title}</Text>
+                  <Text variant="small" color="tertiary" className="block">{shortTime(event.ts)}</Text>
                 </div>
               ))}
             </div>
@@ -1161,8 +1161,8 @@ function RuleCard({
   return (
     <div className="rounded-lg border border-separator p-3 flex items-start gap-2">
       <div className="min-w-0 flex-1">
-        <Text variant="strong" truncate>{rule.name}</Text>
-        <Text variant="small" color="secondary" truncate>
+        <Text variant="strong" truncate className="block">{rule.name}</Text>
+        <Text variant="small" color="secondary" truncate className="block">
           {scopeText} · {METRIC_OPTIONS.find((option) => option.value === rule.metric)?.label} {operator} {rule.threshold}
           {metricUnit(rule.metric)}
         </Text>

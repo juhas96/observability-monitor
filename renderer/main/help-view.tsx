@@ -200,7 +200,7 @@ const HELP_ARTICLES: HelpArticle[] = [
     route: "/alerts",
     steps: [
       { title: "Choose a metric and scope", body: "Rules can track failure rate, check latency, check down, or open incidents. Scope them to all data, a group, provider, account, or uptime check where the metric supports it." },
-      { title: "Tune delivery behavior", body: "Use sustained breach, cooldown, dedupe, incident severity, enabled state, per-rule snooze, and optional Slack/webhook channel routing." },
+      { title: "Tune delivery behavior", body: "Use sustained breach, cooldown, dedupe, incident severity, enabled state, per-rule snooze, and optional Slack, Teams, or webhook channel routing." },
       { title: "Use previews and suggestions", body: "Preview against the current snapshot and use 24h retained-history simulation plus suggested thresholds for sample-backed rules." },
     ],
     outputs: ["Rule health badge", "Current value", "Firing state", "Retained-history tuning", "Notification and channel dispatch"],
@@ -219,7 +219,7 @@ const HELP_ARTICLES: HelpArticle[] = [
       { title: "Use variables and runtime filters", body: "Dashboard variables persist non-secret defaults for group, provider, account, check, owner, tier, and dependency. Runtime filters temporarily override local panels unless a panel has a narrower explicit scope." },
       { title: "Import, export, and copy", body: "Use the More menu to refresh panels, edit, duplicate, export, import, and open templates. Dashboard exports never include secrets, and panels can be copied between dashboards." },
     ],
-    outputs: ["Timeseries, stat, table, log, trace, and event panels", "Row links", "Panel CSV export", "Dashboard JSON export"],
+    outputs: ["Timeseries, stat, table, log, trace, and event panels", "Bounded stacked metrics and evidence rows", "Panel CSV export", "Dashboard JSON export"],
     gotchas: ["Live provider panels never receive dashboard runtime filters; they use their configured account, capability, params, and query.", "Configured-only provider areas must be enabled on the account before live log, trace, metric, dashboard, or data-source panels are discovered.", "Custom SQL or HogQL panels are read-only, SELECT-only, semicolon-free, and capped by provider limits."],
     keywords: ["dashboards", "panels", "recharts", "provider query", "variables", "import", "export"],
   },
@@ -256,15 +256,16 @@ const HELP_ARTICLES: HelpArticle[] = [
     id: "notification-channels",
     sectionId: "settings",
     title: "Notification channels",
-    summary: "Forward failures, recoveries, alerts, successes, and digests to Slack or webhooks.",
+    summary: "Forward failures, recoveries, alerts, successes, and digests to Slack, Teams, or webhooks.",
     steps: [
-      { title: "Add a channel", body: "Open Settings -> Notification channels, choose Slack or generic webhook, enter a display name and webhook URL, and save." },
+      { title: "Add a channel", body: "Open Settings -> Notification channels, choose Slack, Teams, or generic webhook, enter a display name and webhook URL, and save." },
+      { title: "Set up Teams", body: "In Teams, create an incoming webhook with Workflows for the target chat or channel, copy the generated webhook URL, paste it into a Teams channel, and run a test." },
       { title: "Choose event kinds", body: "Toggle which event kinds each channel receives: failures, successes, alerts, recoveries, and digests." },
       { title: "Test intentionally", body: "Use per-channel Test for a single real delivery test. Smoke verification channel tests are opt-in because they also send real messages." },
     ],
     outputs: ["Channel metadata", "Encrypted webhook URL", "Event subscriptions", "Delivery tests", "Filtered channel CSV"],
     gotchas: ["Webhook URLs are stored encrypted and never returned to the renderer after save.", "Channel metadata can be exported, but webhook URLs are never included."],
-    keywords: ["channels", "slack", "webhook", "notification", "digest", "test"],
+    keywords: ["channels", "slack", "teams", "webhook", "notification", "digest", "test"],
   },
   {
     id: "common-issues",
@@ -319,8 +320,8 @@ function ProviderReference({ providers }: { providers: ProviderInfo[] }) {
       <div className="mb-3 flex items-start gap-3">
         <KeyRound className="mt-0.5 size-4 text-tertiary" />
         <div className="min-w-0">
-          <Text variant="strong">Provider setup reference</Text>
-          <Text variant="small" color="secondary">
+          <Text variant="strong" className="block">Provider setup reference</Text>
+          <Text variant="small" color="secondary" className="block">
             This reference is rendered from the live provider registry metadata returned by providers:list. It lists fields and scope hints, not credential values.
           </Text>
         </div>
@@ -337,8 +338,8 @@ function ProviderReference({ providers }: { providers: ProviderInfo[] }) {
               <article key={provider.id} className="rounded-md border border-separator p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <Text variant="strong">{provider.label}</Text>
-                    <Text variant="small" color="secondary">{provider.scopeHint}</Text>
+                    <Text variant="strong" className="block">{provider.label}</Text>
+                    <Text variant="small" color="secondary" className="block">{provider.scopeHint}</Text>
                   </div>
                   <Badge color="secondary">{provider.fields.length} fields</Badge>
                 </div>
@@ -421,7 +422,7 @@ function ArticleCard({ article }: { article: HelpArticle }) {
               <div className="flex size-6 items-center justify-center rounded-md bg-control-subtle text-xs tabular-nums text-secondary">{index + 1}</div>
               <div className="min-w-0">
                 <Text variant="strong" className="block">{step.title}</Text>
-                <Text variant="small" color="secondary">{step.body}</Text>
+                <Text variant="small" color="secondary" className="block">{step.body}</Text>
               </div>
             </div>
           ))}

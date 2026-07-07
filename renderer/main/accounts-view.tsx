@@ -309,8 +309,8 @@ function SetupChecklist({
           <div key={item.label} className="rounded-md border border-separator p-2 flex items-start gap-2">
             {item.done ? <CheckCircle2 className="size-4 text-support-green mt-0.5" /> : <AlertCircle className="size-4 text-tertiary mt-0.5" />}
             <div className="min-w-0 flex-1">
-              <Text variant="small" truncate>{item.label}</Text>
-              <Text variant="small" color="tertiary">{item.detail}</Text>
+              <Text variant="small" truncate className="block">{item.label}</Text>
+              <Text variant="small" color="tertiary" className="block">{item.detail}</Text>
             </div>
             {!item.done ? (
               <Button variant="glass" size="small" onClick={item.onAction}>
@@ -346,10 +346,10 @@ function DiagnosticsPanel({
         {diagnostics.map((diagnostic) => (
           <div key={diagnostic.accountId} className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 py-2 border-t border-separator first:border-t-0 items-center">
             <div className="min-w-0">
-              <Text variant="strong" truncate>{diagnostic.label}</Text>
-              <Text variant="small" color="secondary" truncate>{diagnosticDetail(diagnostic)}</Text>
-              <Text variant="small" color="tertiary" truncate>{dashboardCapabilityDetail(diagnostic)}</Text>
-              <Text variant="small" color="tertiary" truncate>{collectionAreaSummary(diagnostic)}</Text>
+              <Text variant="strong" truncate className="block">{diagnostic.label}</Text>
+              <Text variant="small" color="secondary" truncate className="block">{diagnosticDetail(diagnostic)}</Text>
+              <Text variant="small" color="tertiary" truncate className="block">{dashboardCapabilityDetail(diagnostic)}</Text>
+              <Text variant="small" color="tertiary" truncate className="block">{collectionAreaSummary(diagnostic)}</Text>
               {diagnostic.dashboardCapabilities?.available ? (
                 <div className="flex flex-wrap gap-1 mt-1">
                   <Badge color="blue">{diagnostic.dashboardCapabilities.defaultPanelCount} defaults</Badge>
@@ -458,8 +458,8 @@ function VerificationPanel() {
     <section className="rounded-lg border border-separator p-3 flex flex-col gap-3">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <Text variant="strong">Live smoke verification</Text>
-          <Text variant="small" color="secondary">
+          <Text variant="strong" className="block">Live smoke verification</Text>
+          <Text variant="small" color="secondary" className="block">
             Validates accounts, probes enabled uptime checks, lists dashboard capabilities, and can optionally send test messages.
           </Text>
         </div>
@@ -479,9 +479,9 @@ function VerificationPanel() {
           aria-label="Send real notification channel tests"
         />
         <div className="min-w-0">
-          <Text variant="small">Send notification channel tests</Text>
-          <Text variant="small" color="tertiary">
-            Off by default; when enabled this posts real test messages to enabled Slack and webhook channels.
+          <Text variant="small" className="block">Send notification channel tests</Text>
+          <Text variant="small" color="tertiary" className="block">
+            Off by default; when enabled this posts real test messages to enabled Slack, Teams, and webhook channels.
           </Text>
         </div>
       </div>
@@ -491,8 +491,8 @@ function VerificationPanel() {
             <div key={item.id} className="grid grid-cols-[auto_1fr] gap-3 py-2 border-t border-separator first:border-t-0 items-start">
               <Badge color={verificationColor(item.status)}>{item.status}</Badge>
               <div className="min-w-0">
-                <Text variant="strong" truncate>{item.label}</Text>
-                <Text variant="small" color="secondary" truncate>{item.area}{item.detail ? ` · ${item.detail}` : ""}</Text>
+                <Text variant="strong" truncate className="block">{item.label}</Text>
+                <Text variant="small" color="secondary" truncate className="block">{item.area}{item.detail ? ` · ${item.detail}` : ""}</Text>
               </div>
             </div>
           ))}
@@ -500,7 +500,7 @@ function VerificationPanel() {
       ) : (
         <Callout color={includeChannelTests ? "yellow" : "secondary"} icon={<AlertCircle />}>
           {includeChannelTests
-            ? "This run will send real test notifications to enabled Slack or webhook channels."
+            ? "This run will send real test notifications to enabled Slack, Teams, and webhook channels."
             : "Notification channels are inspected but delivery tests are skipped unless you enable them above."}
         </Callout>
       )}
@@ -522,8 +522,8 @@ function SetupBackupPanel({
   return (
     <section className="rounded-lg border border-separator p-3 flex flex-col md:flex-row md:items-center gap-3">
       <div className="min-w-0 flex-1">
-        <Text variant="strong">Portable setup</Text>
-        <Text variant="small" color="secondary">
+        <Text variant="strong" className="block">Portable setup</Text>
+        <Text variant="small" color="secondary" className="block">
           Export or import app configuration for sharing. Tokens and webhook URLs are never included.
         </Text>
       </div>
@@ -559,8 +559,8 @@ function ProviderCapabilityMatrix({
     <section className="rounded-lg border border-separator p-3 flex flex-col gap-3">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
-          <Text variant="strong">Provider capability matrix</Text>
-          <Text variant="small" color="secondary">
+          <Text variant="strong" className="block">Provider capability matrix</Text>
+          <Text variant="small" color="secondary" className="block">
             Shows connected account coverage, diagnostics, local dashboard availability, and loaded live dashboard defaults per provider.
           </Text>
         </div>
@@ -603,14 +603,14 @@ function ProviderCapabilityMatrix({
                     <div className="flex items-center gap-2 min-w-0">
                       <Icon className="size-4 shrink-0 text-tertiary" />
                       <div className="min-w-0">
-                        <Text variant="strong" truncate>{provider.label}</Text>
-                        <Text variant="small" color="tertiary" truncate>{provider.scopeHint}</Text>
+                        <Text variant="strong" truncate className="block">{provider.label}</Text>
+                        <Text variant="small" color="tertiary" truncate className="block">{provider.scopeHint}</Text>
                       </div>
                     </div>
                   </td>
                   <td className="px-3 py-2 align-top">
-                    <Text variant="small">{providerAccounts.length} connected</Text>
-                    <Text variant="small" color="tertiary">{enabledCount} enabled</Text>
+                    <Text variant="small" className="block">{providerAccounts.length} connected</Text>
+                    <Text variant="small" color="tertiary" className="block">{enabledCount} enabled</Text>
                   </td>
                   <td className="px-3 py-2 align-top">
                     <div className="flex flex-wrap gap-1">
@@ -644,8 +644,8 @@ function ProviderCapabilityMatrix({
                     </div>
                   </td>
                   <td className="px-3 py-2 align-top">
-                    <Text variant="small">{defaultCount} one-click</Text>
-                    <Text variant="small" color="tertiary">{customCount} custom</Text>
+                    <Text variant="small" className="block">{defaultCount} one-click</Text>
+                    <Text variant="small" color="tertiary" className="block">{customCount} custom</Text>
                   </td>
                   <td className="px-3 py-2 align-top">
                     <div className="flex flex-wrap justify-end gap-2">
@@ -742,8 +742,8 @@ function PortableExportDialog({
                     aria-label={`Include ${account.label}`}
                   />
                   <div className="min-w-0">
-                    <Text variant="strong" truncate>{account.label}</Text>
-                    <Text variant="small" color="secondary" truncate>
+                    <Text variant="strong" truncate className="block">{account.label}</Text>
+                    <Text variant="small" color="secondary" truncate className="block">
                       {providerLabel(account.provider)}{group ? ` · ${group.name}` : ""}
                     </Text>
                   </div>

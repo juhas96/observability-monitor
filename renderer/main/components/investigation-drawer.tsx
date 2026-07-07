@@ -85,8 +85,8 @@ function TriggerSummary({ context }: { context: InvestigationContext }) {
       <div className="flex min-w-0 items-start gap-3">
         <Search className="mt-0.5 size-4 shrink-0 text-tertiary" />
         <div className="min-w-0 flex-1">
-          <Text variant="title" truncate>{title}</Text>
-          <Text variant="small" color="secondary" truncate>
+          <Text variant="title" truncate className="block">{title}</Text>
+          <Text variant="small" color="secondary" truncate className="block">
             {[context.service?.name, context.account?.label, context.group?.name, trigger.provider].filter(Boolean).join(" · ") || "Local evidence context"}
           </Text>
           {trigger.subtitle ? <Text variant="small" color="tertiary" truncate>{trigger.subtitle}</Text> : null}

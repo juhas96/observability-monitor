@@ -177,10 +177,10 @@ function downloadUptimeCsv({
 
 function StatCard({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
-    <div className="rounded-lg border border-separator p-3">
-      <Text variant="small" color="tertiary">{label}</Text>
-      <Text variant="strong">{value}</Text>
-      {detail ? <Text variant="small" color="secondary">{detail}</Text> : null}
+    <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-separator p-3">
+      <Text variant="small" color="tertiary" className="block">{label}</Text>
+      <Text variant="strong" className="block">{value}</Text>
+      {detail ? <Text variant="small" color="secondary" className="block">{detail}</Text> : null}
     </div>
   );
 }
@@ -342,8 +342,8 @@ function CheckCard({
     <div className="rounded-lg border border-separator p-3 flex flex-col gap-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <Text variant="strong" truncate>{check.name}</Text>
-          <Text variant="small" color="secondary" truncate>{check.method} · {check.url}</Text>
+          <Text variant="strong" truncate className="block">{check.name}</Text>
+          <Text variant="small" color="secondary" truncate className="block">{check.method} · {check.url}</Text>
         </div>
         <Badge color={status.color}>{status.label}</Badge>
         {!check.enabled ? <Badge color="secondary">Disabled</Badge> : null}

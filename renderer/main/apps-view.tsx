@@ -256,17 +256,17 @@ function ServiceTile({
         <StatusBadge status={service.status} />
       </div>
       <div className="grid grid-cols-3 gap-2">
-        <div>
-          <Text variant="small" color="tertiary">Incidents</Text>
-          <Text variant="strong">{service.openIncidentCount}</Text>
+        <div className="flex min-w-0 flex-col gap-1">
+          <Text variant="small" color="tertiary" className="block">Incidents</Text>
+          <Text variant="strong" className="block">{service.openIncidentCount}</Text>
         </div>
-        <div>
-          <Text variant="small" color="tertiary">Signals</Text>
-          <Text variant="strong">{service.signalCount}</Text>
+        <div className="flex min-w-0 flex-col gap-1">
+          <Text variant="small" color="tertiary" className="block">Signals</Text>
+          <Text variant="strong" className="block">{service.signalCount}</Text>
         </div>
-        <div>
-          <Text variant="small" color="tertiary">Stale</Text>
-          <Text variant="strong">{service.staleAccountCount}</Text>
+        <div className="flex min-w-0 flex-col gap-1">
+          <Text variant="small" color="tertiary" className="block">Stale</Text>
+          <Text variant="strong" className="block">{service.staleAccountCount}</Text>
         </div>
       </div>
       <div className="flex flex-wrap gap-1.5">
@@ -796,13 +796,13 @@ function ServiceMetadataPanel({
   return (
     <div className="flex flex-col gap-3">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-        <div className="rounded-md border border-separator p-2">
-          <Text variant="small" color="tertiary">Owner</Text>
-          <Text variant="strong" truncate>{metadata.owner ?? "Unassigned"}</Text>
+        <div className="flex min-w-0 flex-col gap-1 rounded-md border border-separator p-2">
+          <Text variant="small" color="tertiary" className="block">Owner</Text>
+          <Text variant="strong" truncate className="block">{metadata.owner ?? "Unassigned"}</Text>
         </div>
-        <div className="rounded-md border border-separator p-2">
-          <Text variant="small" color="tertiary">Tier</Text>
-          <Text variant="strong">{SERVICE_TIERS.find((option) => option.value === metadata.tier)?.label ?? "No tier"}</Text>
+        <div className="flex min-w-0 flex-col gap-1 rounded-md border border-separator p-2">
+          <Text variant="small" color="tertiary" className="block">Tier</Text>
+          <Text variant="strong" className="block">{SERVICE_TIERS.find((option) => option.value === metadata.tier)?.label ?? "No tier"}</Text>
         </div>
       </div>
       {links.length > 0 ? (
@@ -1179,8 +1179,8 @@ export function AppsView() {
                 <Section title="Health Contributors" icon={<Gauge className="size-4 text-tertiary" />}>
                   <div className="grid grid-cols-2 gap-2">
                     {healthContributors.map((item) => (
-                      <div key={item.label} className="rounded-md border border-separator p-2">
-                        <Text variant="small" color="tertiary">{item.label}</Text>
+                      <div key={item.label} className="flex min-w-0 flex-col gap-1 rounded-md border border-separator p-2">
+                        <Text variant="small" color="tertiary" className="block">{item.label}</Text>
                         <div className="flex items-center justify-between gap-2">
                           <Text variant="strong">{item.value}</Text>
                           <StatusBadge status={item.status} />

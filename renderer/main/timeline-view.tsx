@@ -290,8 +290,8 @@ function TimelineTooltip({ active, payload }: TooltipContentProps) {
   if (!point) return null;
   return (
     <div className="rounded-lg border border-separator bg-background-solid p-3 shadow-sm max-w-[280px]">
-      <Text variant="small" color="tertiary">{point.y}</Text>
-      <Text variant="strong">{point.event.title}</Text>
+      <Text variant="small" color="tertiary" className="block">{point.y}</Text>
+      <Text variant="strong" className="block">{point.event.title}</Text>
       <Text variant="small" color="secondary">
         {point.event.type} · {providerLabel(point.event.provider)} · {new Date(point.event.ts).toLocaleString()}
       </Text>
@@ -402,8 +402,8 @@ function EventRow({ event, account }: { event: HistoryEvent; account: Account | 
       <div className="min-w-0 flex items-center gap-2">
         <Icon className="size-4 text-tertiary shrink-0" />
         <div className="min-w-0">
-          <Text variant="strong" truncate>{event.title}</Text>
-          <Text variant="small" color="secondary" truncate>{account?.label ?? providerLabel(event.provider)}</Text>
+          <Text variant="strong" truncate className="block">{event.title}</Text>
+          <Text variant="small" color="secondary" truncate className="block">{account?.label ?? providerLabel(event.provider)}</Text>
         </div>
       </div>
       <div className="flex items-center gap-1">
