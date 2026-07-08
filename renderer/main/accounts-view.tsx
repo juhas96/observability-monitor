@@ -1039,7 +1039,7 @@ export function AccountsView() {
       }
       className="h-full"
     >
-      <div className="px-2 pb-8 flex flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-3 px-2 pb-8">
         {encryptionUnavailable ? (
           <Callout color="red" icon={<AlertCircle />}>
             Secure token storage is unavailable on this system, so accounts can't be saved safely.

@@ -36,7 +36,10 @@ import type {
   PortableSetupExportRequest,
   PortableSetupImportSummary,
   ProjectGroup,
+  Provider,
   ProviderInfo,
+  ProviderWorkspaceCapability,
+  ProviderWorkspaceOverview,
   ServiceMetadata,
   ServiceMetadataInput,
   SloDefinition,
@@ -53,6 +56,13 @@ function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
 
 export const monitorApi = {
   listProviders: () => invoke<ProviderInfo[]>("providers:list"),
+  listProviderWorkspaceCapabilities: () => invoke<ProviderWorkspaceCapability[]>("providers:listWorkspaceCapabilities"),
+  getProviderWorkspaceOverview: (req: { provider: Provider; range?: HistoryRange; accountId?: string }) =>
+    invoke<ProviderWorkspaceOverview>("providers:getWorkspaceOverview", req),
+  runProviderWorkspaceQuery: (req: { provider: Provider; range?: HistoryRange; accountId?: string }) =>
+    invoke<ProviderWorkspaceOverview>("providers:runWorkspaceQuery", req),
+  exportProviderWorkspace: (req: { provider: Provider; range?: HistoryRange; accountId?: string; format: "csv" | "json" }) =>
+    invoke<{ ok: boolean; filePath?: string }>("providers:exportWorkspace", req),
   listAccounts: () => invoke<Account[]>("accounts:list"),
   listGroups: () => invoke<ProjectGroup[]>("groups:list"),
   testConnection: (req: { provider: string; creds: Record<string, string> }) =>

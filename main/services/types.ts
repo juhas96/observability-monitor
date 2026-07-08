@@ -493,6 +493,102 @@ export interface DashboardProviderQuery {
   yField?: string;
 }
 
+export type ProviderWorkspaceSectionId =
+  | "overview"
+  | "activity"
+  | "analytics"
+  | "resources"
+  | "evidence"
+  | "alerts"
+  | "exports"
+  | "setup";
+
+export interface ProviderWorkspaceSection {
+  id: ProviderWorkspaceSectionId;
+  label: string;
+  description: string;
+  available: boolean;
+  detail?: string;
+}
+
+export interface ProviderWorkspaceCapability {
+  provider: Provider;
+  label: string;
+  accountCount: number;
+  enabledAccountCount: number;
+  sections: ProviderWorkspaceSection[];
+}
+
+export interface ProviderWorkspaceStat {
+  label: string;
+  value: string;
+  tone?: "neutral" | "success" | "warning" | "danger" | "info";
+  detail?: string;
+}
+
+export interface ProviderWorkspaceSeriesPoint {
+  ts: string;
+  label: string;
+  values: Record<string, number>;
+}
+
+export interface ProviderWorkspaceSeries {
+  id: string;
+  label: string;
+  description?: string;
+  unit?: string;
+  kind: "line" | "bar" | "area";
+  fields: { key: string; label: string; tone?: ProviderWorkspaceStat["tone"] }[];
+  points: ProviderWorkspaceSeriesPoint[];
+}
+
+export interface ProviderWorkspaceResourceTable {
+  id: string;
+  label: string;
+  description?: string;
+  columns: string[];
+  rows: DashboardTableRow[];
+  emptyDetail?: string;
+}
+
+export interface ProviderWorkspaceEvidenceRow {
+  id: string;
+  ts: string;
+  type: "event" | "item" | "signal" | "incident" | "link";
+  title: string;
+  subtitle?: string;
+  status?: NormalizedStatus | IncidentStatus;
+  severity?: ObservabilitySeverity;
+  accountId?: string;
+  accountLabel?: string;
+  category?: MonitorCategory | ProviderDeepLink["category"];
+  url?: string;
+  logAvailable?: boolean;
+  sourceUid?: string;
+}
+
+export interface ProviderWorkspaceAlertTemplate {
+  id: string;
+  label: string;
+  description: string;
+  rule: AlertRuleInput;
+}
+
+export interface ProviderWorkspaceOverview {
+  provider: Provider;
+  label: string;
+  generatedAt: string;
+  range: HistoryRange;
+  accountId?: string;
+  stats: ProviderWorkspaceStat[];
+  sections: ProviderWorkspaceSection[];
+  series: ProviderWorkspaceSeries[];
+  resources: ProviderWorkspaceResourceTable[];
+  evidence: ProviderWorkspaceEvidenceRow[];
+  alertTemplates: ProviderWorkspaceAlertTemplate[];
+  warnings?: string[];
+}
+
 export type HistoryEventType = "deploy" | "failure" | "recovery" | "alert" | "incident" | "check";
 export type HistoryDateRange = { mode: "relative"; range: HistoryRange } | { mode: "custom"; from?: string; to?: string };
 

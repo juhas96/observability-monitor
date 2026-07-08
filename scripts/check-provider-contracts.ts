@@ -22,6 +22,7 @@ const EXPECTED_PROVIDERS = [
 
 const FILTERED_VIEWS = [
   "renderer/main/dashboard-view.tsx",
+  "renderer/main/pipelines-view.tsx",
   "renderer/main/apps-view.tsx",
   "renderer/main/insights-view.tsx",
   "renderer/main/incidents-view.tsx",
@@ -39,6 +40,7 @@ const FILTER_PRESET_VIEWS = [
 
 const DATE_FILTERED_VIEWS = [
   "renderer/main/dashboard-view.tsx",
+  "renderer/main/pipelines-view.tsx",
   "renderer/main/apps-view.tsx",
   "renderer/main/insights-view.tsx",
   "renderer/main/incidents-view.tsx",
@@ -135,6 +137,7 @@ async function main(): Promise<void> {
   const dashboardRunner = await readRepoFile("main/services/dashboard-query-runner.ts");
   const accountsView = await readRepoFile("renderer/main/accounts-view.tsx");
   const mainDashboardView = await readRepoFile("renderer/main/dashboard-view.tsx");
+  const pipelinesView = await readRepoFile("renderer/main/pipelines-view.tsx");
   const appsView = await readRepoFile("renderer/main/apps-view.tsx");
   const dashboardsView = await readRepoFile("renderer/main/dashboards-view.tsx");
   const dashboardsHook = await readRepoFile("renderer/main/hooks/use-dashboards.ts");
@@ -159,6 +162,9 @@ async function main(): Promise<void> {
   const rootView = await readRepoFile("renderer/main/root-view.tsx");
   const commandCenterView = await readRepoFile("renderer/main/command-center-view.tsx");
   const commandPalette = await readRepoFile("renderer/main/components/command-palette.tsx");
+  const providerWorkspaceService = await readRepoFile("main/services/provider-workspace.ts");
+  const providerWorkspaceView = await readRepoFile("renderer/main/provider-workspace-view.tsx");
+  const responsiveLayout = await readRepoFile("renderer/main/components/responsive-layout.tsx");
   const helpView = await readRepoFile("renderer/main/help-view.tsx");
   const providersHook = await readRepoFile("renderer/main/hooks/use-providers.ts");
   const monitorDataHook = await readRepoFile("renderer/main/hooks/use-monitor-data.ts");
@@ -168,6 +174,15 @@ async function main(): Promise<void> {
   check(registry.includes("collectionAreas") && backendTypes.includes("interface ProviderCollectionArea") && rendererTypes.includes("interface ProviderCollectionArea"), "provider metadata must include configured collection areas on backend and renderer");
   check(investigationHandler.includes('"investigation:getContext"') && handlersIndex.includes("registerInvestigationHandlers();") && rendererIpc.includes('"investigation:getContext"'), "investigation:getContext IPC must be registered and exposed through renderer IPC");
   check(investigationContext.includes("buildSnapshot()") && investigationContext.includes("getEvents({ range: \"24h\" })") && !investigationContext.includes("getToken("), "investigation context must assemble non-secret current snapshot and retained history evidence without reading tokens");
+  check(backendTypes.includes("interface ProviderWorkspaceOverview") && rendererTypes.includes("interface ProviderWorkspaceOverview"), "provider workspace types must exist on backend and renderer");
+  check(providerWorkspaceService.includes("listWorkspaceCapabilities") && providerWorkspaceService.includes("getWorkspaceOverview") && providerWorkspaceService.includes("buildSnapshot()") && providerWorkspaceService.includes("getSeries(input.range") && providerWorkspaceService.includes("getEvents({ range: input.range"), "provider-workspace.ts must aggregate provider workspaces from current snapshot and retained history");
+  check(providerWorkspaceService.includes("getToken(account.id)") && providerWorkspaceService.includes("secretField(account.provider)") && providerWorkspaceService.includes("definition.buildWorkspace"), "provider-workspace.ts must load provider credentials only in the backend for adapter workspace enrichment");
+  check(!rendererIpc.includes("getToken(") && !providerWorkspaceView.includes("token") && !pipelinesView.includes("ipcRenderer"), "renderer workspace and pipelines UI must not read or expose provider tokens");
+  check(providerWorkspaceService.includes("alertTemplates") && providerWorkspaceService.includes('metric: "failureRate"') && providerWorkspaceService.includes('metric: "openIncidents"'), "provider-workspace.ts must expose provider-scoped alert templates");
+  check(providerWorkspaceService.includes("resourceTables") && providerWorkspaceService.includes("evidenceRows") && providerWorkspaceService.includes("statusSeries") && providerWorkspaceService.includes("activitySeries"), "provider-workspace.ts must expose workspace resources, evidence, and chart series");
+  check(registry.includes("interface ProviderWorkspaceContext") && registry.includes("buildWorkspace?") && registry.includes("ProviderWorkspaceContribution"), "provider registry must expose a backend-only read-only provider workspace enrichment hook");
+  check(rendererIpc.includes('"providers:listWorkspaceCapabilities"') && rendererIpc.includes('"providers:getWorkspaceOverview"') && rendererIpc.includes('"providers:runWorkspaceQuery"') && rendererIpc.includes('"providers:exportWorkspace"'), "renderer IPC must expose provider workspace list/get/run/export calls");
+  check(providersHook.includes("useProviderWorkspaceCapabilities") && providersHook.includes("useProviderWorkspaceOverview"), "providers hook must expose workspace capability and overview queries");
   check(!registry.includes("getToken("), "registry.ts must not read provider tokens");
   check(!/from\s+["']\.\/token-store\.js["']/.test(dashboardStore), "dashboard-store.ts must not import token-store");
   check(!dashboardStore.includes("getToken("), "dashboard-store.ts must not read provider tokens");
@@ -231,6 +246,7 @@ async function main(): Promise<void> {
     "accounts.filters.v1.presets.default",
     "dashboard.filters.v2.presets.default",
     "apps.filters.v1.presets.default",
+    "providerWorkspace.filters.v1.presets.default",
     "insights.filters.v2.presets.default",
     "incidents.filters.v1.presets.default",
     "timeline.filters.v1.presets.default",
@@ -332,16 +348,81 @@ async function main(): Promise<void> {
   check(!router.includes('path: "/grafana"'), "router.tsx must not expose the old /grafana route");
   check(!rootView.includes('path: "/grafana"'), "root-view.tsx must not expose the old Grafana sidebar item");
   check(!commandPalette.includes('"/grafana"') && !commandPalette.includes("'/grafana'"), "command-palette.tsx must not expose the old Grafana route");
-  check(router.includes("CommandCenterView") && router.includes('path: "/"') && router.includes('path: "/dashboard"'), "router.tsx must expose Command Center at / and preserve the live Dashboard at /dashboard");
-  check(rootView.includes('label: "Command Center"') && rootView.includes('path: "/dashboard"'), "root-view.tsx must expose Command Center and the preserved Dashboard route");
+  check(router.includes("CommandCenterView") && router.includes('path: "/"') && router.includes('path: "/dashboard"'), "router.tsx must expose Command Center at / and preserve the health detail route at /dashboard");
+  check(router.includes("PipelinesView") && router.includes('path: "/pipelines"'), "router.tsx must expose Pipelines at /pipelines");
+  check(router.includes("ProviderWorkspaceView") && router.includes('path: "/providers"'), "router.tsx must expose provider workspaces at /providers");
+  check(rootView.includes('label: "Command Center"') && rootView.includes('label: "Pipelines"') && rootView.includes('label: "Health detail"'), "root-view.tsx must expose Command Center, Pipelines, and Health detail navigation");
+  check(rootView.includes('label: "Providers"') && rootView.includes('path: "/providers"') && rootView.includes("Blocks"), "root-view.tsx must expose Providers from the sidebar");
+  check(rootView.includes('className="h-full min-w-0 overflow-hidden"') && rootView.includes("<Outlet />"), "root-view.tsx must wrap route content in a min-width overflow guard");
   check(commandPalette.includes('label: "Command Center"') && commandPalette.includes('to: "/dashboard"'), "command-palette.tsx must expose Command Center and send dashboard item logs to /dashboard");
+  check(commandPalette.includes("openPipelines") && commandPalette.includes('pipelines.drilldown.v1') && commandPalette.includes('path: "/pipelines"'), "command-palette.tsx must expose pipelines navigation and scoped drilldowns");
+  check(commandPalette.includes("openProviderWorkspace") && commandPalette.includes('providerWorkspace.filters.v1') && commandPalette.includes('path: "/providers"'), "command-palette.tsx must expose provider workspace navigation and selection");
+  checkIncludesAll(responsiveLayout, [
+    "export function RouteSurface",
+    "export function RouteHeader",
+    "export function ResponsiveToolbar",
+    "export function ResponsiveMoreMenu",
+    "export function ResponsiveSectionNav",
+    "export function ResponsiveGrid",
+    "export function ScrollTable",
+    "repeat(auto-fit, minmax(min(100%",
+  ], "responsive-layout.tsx must provide shared minimum-window route layout primitives");
+  check(providerWorkspaceView.includes("WorkspaceChart") && providerWorkspaceView.includes("SectionRail") && providerWorkspaceView.includes("ResourceTable") && providerWorkspaceView.includes("EvidenceRow") && providerWorkspaceView.includes("AlertTemplateRow"), "provider-workspace-view.tsx must render shared workspace charts, section rail, resources, evidence, and alert templates");
+  check(providerWorkspaceView.includes("Inventory") && providerWorkspaceView.includes("Health") && providerWorkspaceView.includes("Setup reference") && providerWorkspaceView.includes("What populates it") && providerWorkspaceView.includes("PIPELINE_DRILLDOWN_KEY"), "provider-workspace-view.tsx must present provider-native inventory, health, actionable setup guidance, and pipelines handoff");
+  checkIncludesAll(providerWorkspaceView, [
+    "RouteSurface",
+    "RouteHeader",
+    "RouteBody",
+    "ResponsiveSectionNav",
+    "ResponsiveMoreMenu",
+    "ResponsiveGrid",
+    "ScrollTable",
+    "2xl:flex-row",
+    "provider-workspace-activity",
+    "provider-workspace-analytics",
+    "provider-workspace-exports",
+    "provider-workspace-setup",
+    "scrollIntoView",
+  ], "provider-workspace-view.tsx must use responsive page primitives and real section targets for the minimum 720px window");
+  check(!providerWorkspaceView.includes("lg:flex-row") && !providerWorkspaceView.includes("lg:w-56"), "provider workspace rail/content layout must not switch to side-by-side at lg widths");
+  check(providerWorkspaceView.includes("exportProviderWorkspace") && providerWorkspaceView.includes("CSV") && providerWorkspaceView.includes("JSON"), "provider-workspace-view.tsx must expose secret-free workspace exports");
+  check(providerWorkspaceView.includes("No retained history for this chart yet") && providerWorkspaceView.includes("No evidence rows match"), "provider-workspace-view.tsx must render truthful empty states for missing chart/evidence data");
+  checkIncludesAll(pipelinesView, [
+    "export function PipelinesView",
+    "PIPELINE_CATEGORIES",
+    "Running or queued now",
+    "Failed recently",
+    "Deploys before failures or incidents",
+    "No pipeline rows match the current filters",
+    "LogViewerDialog",
+    "incidents.create.v1",
+    "alerts.draft.v1",
+  ], "pipelines-view.tsx must provide first-class pipeline triage sections, empty states, logs, incident creation, and alert-rule drafts");
+  for (const [name, source] of [
+    ["command-center-view.tsx", commandCenterView],
+    ["dashboard-view.tsx", mainDashboardView],
+    ["pipelines-view.tsx", pipelinesView],
+    ["apps-view.tsx", appsView],
+    ["insights-view.tsx", insightsView],
+    ["incidents-view.tsx", incidentsView],
+    ["timeline-view.tsx", timelineView],
+    ["uptime-view.tsx", uptimeView],
+    ["alerts-view.tsx", alertsView],
+    ["dashboards-view.tsx", dashboardsView],
+    ["accounts-view.tsx", accountsView],
+    ["help-view.tsx", helpView],
+  ] as const) {
+    check(source.includes('className="h-full"') || source.includes("className=\"h-full "), `${name} must keep its route surface constrained to the app viewport`);
+  }
   check(router.includes("HelpView") && router.includes('path: "/help"'), "router.tsx must expose the in-app Help route at /help");
   check(rootView.includes('label: "Help"') && rootView.includes('path: "/help"') && rootView.includes("CircleHelp"), "root-view.tsx must expose Help from the sidebar with a ?/help icon");
   check(commandPalette.includes('label: "Help"') && commandPalette.includes('go("/help")'), "command-palette.tsx must expose Help navigation");
   checkIncludesAll(helpView, [
     "Command Center",
-    "Detailed Dashboard",
+    "Pipelines",
+    "Health detail",
     "Apps cockpit",
+    "Provider workspaces",
     "Insights and SLOs",
     "Incident center",
     "Correlation Timeline",
@@ -363,7 +444,7 @@ async function main(): Promise<void> {
   check(helpView.includes("useProviders") && helpView.includes("provider.fields") && helpView.includes("ProviderReference") && providersHook.includes("monitorApi.listProviders") && rendererIpc.includes('"providers:list"'), "Help provider setup reference must be rendered from providers:list metadata instead of hardcoded credential copies");
   check(agentsDoc.includes("user-facing functionality change") && agentsDoc.includes("in-app Help docs"), "AGENTS.md must require in-app Help docs updates for user-facing functionality changes");
   check(commandCenterView.includes("useMonitorData") && commandCenterView.includes("useHistoryEvents") && commandCenterView.includes("useRuleStates"), "command-center-view.tsx must summarize real monitor, retained-history, and alert-rule state");
-  check(commandCenterView.includes("openFirstIssue") && commandCenterView.includes("accounts.select.v1") && commandCenterView.includes("uptime.drilldown.v1") && commandCenterView.includes("alerts.select.v1") && commandCenterView.includes("dashboard.item.select.v1") && commandCenterView.includes("incidents.drilldown.v1") && commandCenterView.includes("timeline.drilldown.v1"), "command-center-view.tsx must hand off suggested actions and issue rows to scoped destination views");
+  check(commandCenterView.includes("openFirstIssue") && commandCenterView.includes("accounts.select.v1") && commandCenterView.includes("uptime.drilldown.v1") && commandCenterView.includes("alerts.select.v1") && commandCenterView.includes("dashboard.item.select.v1") && commandCenterView.includes("incidents.drilldown.v1") && commandCenterView.includes("timeline.drilldown.v1") && commandCenterView.includes("pipelines.drilldown.v1"), "command-center-view.tsx must hand off suggested actions and issue rows to scoped destination views");
   check(commandCenterView.includes("const groupId = event.groupId ?? accountsById.get(event.accountId)?.groupId") && commandCenterView.includes("group: groupId ?? \"all\""), "command-center-view.tsx retained-history activity drilldowns must use account-derived group fallback");
   check(commandCenterView.includes("allFailedItems") && commandCenterView.includes("visibleFailedItems") && commandCenterView.includes("Showing {visibleRecentActivity.length} of {allRecentActivity.length}"), "command-center-view.tsx must count full issue/activity totals separately from capped visible rows");
   check(monitorDataHook.includes("useMonitorSettings") && monitorDataHook.includes("settings:monitor-changed") && commandCenterView.includes("SuppressionStatus") && commandCenterView.includes("Notification suppression") && commandCenterView.includes("activeMaintenanceWindows") && commandCenterView.includes("activeRuleSnoozes") && commandCenterView.includes("Rule snoozed until"), "command-center-view.tsx must surface active notification suppression from monitor settings and per-rule snoozes");
@@ -375,6 +456,7 @@ async function main(): Promise<void> {
   checkIncludesAll(readme, [
     "Command Center at `/`",
     "detailed grouped live account dashboard at `/dashboard`",
+    "Provider workspaces at `/providers`",
     "Custom Dashboards at `/dashboards`",
     "local normalized data panels",
     "provider-declared live query panels",
@@ -387,7 +469,7 @@ async function main(): Promise<void> {
     "npm run lint",
     "npm run build",
     "renderer `localStorage`: per-tab filter state, saved filter presets, and one-shot navigation/deep-link payloads",
-  ], "README.md must describe the current Command Center, Custom Dashboards, filters, Grafana replacement, validation commands, and runtime data boundaries");
+  ], "README.md must describe the current Command Center, Provider workspaces, Custom Dashboards, filters, Grafana replacement, validation commands, and runtime data boundaries");
   checkIncludesAll(handlersIndex, [
     "registerAccountHandlers();",
     "registerChannelHandlers();",
@@ -724,6 +806,7 @@ async function main(): Promise<void> {
   check(grafanaSource.includes("const DEFAULT_SHOW_DATA_SOURCE_HEALTH = false") && grafanaSource.includes("const DEFAULT_ENABLE_LIVE_QUERIES = false"), "grafana.ts must default advanced data-source health and live query discovery to configured-only");
   check(grafanaSource.includes("function liveQueriesEnabled") && grafanaSource.includes("if (!liveQueriesEnabled(creds)) return []"), "grafana.ts must not discover live query capabilities unless explicitly configured or backed by saved presets");
   check(grafanaSource.includes("collectionAreas:") && grafanaSource.includes("grafana.liveQueries") && grafanaSource.includes("defaultState: \"configured\""), "grafana.ts must declare configured-only collection areas");
+  check(grafanaSource.includes("async buildWorkspace") && grafanaSource.includes("grafana.collectionAreas") && grafanaSource.includes("grafana.alertRules") && grafanaSource.includes("grafana.dataSourceHealth") && grafanaSource.includes("grafana.liveCapabilities"), "grafana.ts must provide actionable provider workspace tables for setup, alerts, data source health, and live capabilities");
   check(grafanaSource.includes('title: "Active Grafana alerts"') && grafanaSource.includes('capabilityId: "grafana.alerts"'), "grafana.ts must expose an active alerts default dashboard panel");
   check(grafanaSource.includes('title: "Grafana data source health"') && grafanaSource.includes('capabilityId: "grafana.datasources"'), "grafana.ts must expose a datasource health default dashboard panel");
   check(grafanaSource.includes("function firstDatasourceUid") && grafanaSource.includes('firstDatasourceUid(dataSources, "loki")') && grafanaSource.includes('firstDatasourceUid(dataSources, "tempo")'), "grafana.ts must choose discovered Loki/Tempo datasource UIDs when no saved default UID exists");

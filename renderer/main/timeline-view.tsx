@@ -574,7 +574,7 @@ export function TimelineView() {
       }
       className="h-full"
     >
-      <div className="px-2 pb-8 flex flex-col gap-6">
+      <div className="flex min-w-0 flex-col gap-6 px-2 pb-8">
         {events.length === 0 ? (
           activeFilters.length > 0 ? (
             <EmptyState title="No events match filters" description="Adjust or reset filters to show more events.">

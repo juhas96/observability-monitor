@@ -20,17 +20,19 @@ import { useRules } from "../hooks/use-rules";
 import { useServiceMetadata } from "../hooks/use-service-metadata";
 import { monitorApi } from "../ipc";
 
-const NAV_ITEMS: { path: string; label: string; shortcut: string }[] = [
+const NAV_ITEMS: { path: string; label: string; shortcut?: string }[] = [
   { path: "/", label: "Command Center", shortcut: "⌘1" },
-  { path: "/dashboard", label: "Dashboard", shortcut: "⌘2" },
-  { path: "/apps", label: "Apps", shortcut: "⌘3" },
-  { path: "/insights", label: "Insights", shortcut: "⌘4" },
+  { path: "/pipelines", label: "Pipelines", shortcut: "⌘2" },
+  { path: "/dashboard", label: "Health detail", shortcut: "⌘3" },
+  { path: "/apps", label: "Services", shortcut: "⌘4" },
   { path: "/incidents", label: "Incidents", shortcut: "⌘5" },
-  { path: "/timeline", label: "Timeline", shortcut: "⌘6" },
+  { path: "/insights", label: "Observability", shortcut: "⌘6" },
   { path: "/uptime", label: "Uptime", shortcut: "⌘7" },
-  { path: "/alerts", label: "Alert rules", shortcut: "⌘8" },
-  { path: "/dashboards", label: "Dashboards", shortcut: "⌘9" },
-  { path: "/accounts", label: "Accounts", shortcut: "⌘0" },
+  { path: "/alerts", label: "Alerts", shortcut: "⌘8" },
+  { path: "/providers", label: "Providers", shortcut: "⌘9" },
+  { path: "/timeline", label: "Timeline", shortcut: "" },
+  { path: "/dashboards", label: "Dashboards", shortcut: "" },
+  { path: "/accounts", label: "Setup", shortcut: "⌘0" },
   { path: "/help", label: "Help", shortcut: "?" },
 ];
 
@@ -49,6 +51,8 @@ const INCIDENT_CREATE_KEY = "incidents.create.v1";
 const INCIDENT_SELECT_KEY = "incidents.select.v1";
 const UPTIME_CREATE_KEY = "uptime.create.v1";
 const UPTIME_DRILLDOWN_KEY = "uptime.drilldown.v1";
+const PROVIDER_WORKSPACE_FILTER_KEY = "providerWorkspace.filters.v1";
+const PIPELINE_DRILLDOWN_KEY = "pipelines.drilldown.v1";
 
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate();
@@ -78,6 +82,16 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     run(() => {
       localStorage.setItem(ACCOUNT_SELECT_KEY, JSON.stringify({ accountId }));
       void navigate({ to: "/accounts" });
+    });
+  const openProviderWorkspace = (provider: string, accountId = "all") =>
+    run(() => {
+      localStorage.setItem(PROVIDER_WORKSPACE_FILTER_KEY, JSON.stringify({ provider, accountId, range: "24h", search: "" }));
+      void navigate({ to: "/providers" });
+    });
+  const openPipelines = (payload: Record<string, unknown> = {}) =>
+    run(() => {
+      localStorage.setItem(PIPELINE_DRILLDOWN_KEY, JSON.stringify(payload));
+      void navigate({ to: "/pipelines" });
     });
   const createAccount = () =>
     run(() => {
@@ -195,6 +209,10 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             Add uptime check
             <CommandShortcut>New</CommandShortcut>
           </CommandItem>
+          <CommandItem value="action pipelines runs deploy releases migrations ci cd failed running" onSelect={() => openPipelines()}>
+            Open pipelines
+            <CommandShortcut>⌘2</CommandShortcut>
+          </CommandItem>
           <CommandItem value="action create incident new investigation manual local" onSelect={createIncident}>
             Create local incident
             <CommandShortcut>New</CommandShortcut>
@@ -217,10 +235,51 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           {NAV_ITEMS.map((nav) => (
             <CommandItem key={nav.path} value={`go ${nav.label}`} onSelect={() => go(nav.path)}>
               {nav.label}
-              <CommandShortcut>{nav.shortcut}</CommandShortcut>
+              {nav.shortcut ? <CommandShortcut>{nav.shortcut}</CommandShortcut> : null}
             </CommandItem>
           ))}
         </CommandGroup>
+
+        {accounts.length > 0 ? (
+          <CommandGroup heading="Pipelines">
+            {items
+              .filter((item) => item.category === "run" || item.category === "deploy" || item.category === "release" || item.category === "migration")
+              .slice(0, MAX_ITEMS)
+              .map((item) => {
+                const Icon = providerIcon(item.provider);
+                return (
+                  <CommandItem
+                    key={item.uid}
+                    value={`pipeline ${providerLabel(item.provider)} ${item.title} ${item.subtitle} ${item.status} ${item.commitSha ?? ""} ${item.actor ?? ""}`}
+                    onSelect={() => openPipelines({ provider: item.provider, account: item.accountId, status: item.status, category: item.category, search: item.title })}
+                  >
+                    <Icon className="size-4" />
+                    {item.title}
+                    <CommandShortcut>{item.status}</CommandShortcut>
+                  </CommandItem>
+                );
+              })}
+          </CommandGroup>
+        ) : null}
+
+        {accounts.length > 0 ? (
+          <CommandGroup heading="Provider workspaces">
+            {[...new Set(accounts.map((account) => account.provider))].map((provider) => {
+              const Icon = providerIcon(provider);
+              return (
+                <CommandItem
+                  key={provider}
+                  value={`provider workspace ${providerLabel(provider)} charts resources logs evidence alerts exports`}
+                  onSelect={() => openProviderWorkspace(provider)}
+                >
+                  <Icon className="size-4" />
+                  {providerLabel(provider)} workspace
+                  <CommandShortcut>Open</CommandShortcut>
+                </CommandItem>
+              );
+            })}
+          </CommandGroup>
+        ) : null}
 
         {accounts.length > 0 ? (
           <CommandGroup heading="Accounts">

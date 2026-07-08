@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { Bell, Download, ExternalLink, RefreshCw, Search } from "lucide-react";
+import { Activity, AlertTriangle, Bell, Clock3, Download, ExternalLink, RefreshCw, Search } from "lucide-react";
 import {
   ScrollArea,
   Button,
@@ -12,6 +12,7 @@ import {
 } from "@glaze/core/components";
 
 import { AccountSection } from "./components/account-section";
+import { StatusStackBar, type BreakdownSegment } from "./components/charts";
 import {
   ALL,
   CATEGORY_FILTER_OPTIONS,
@@ -51,6 +52,8 @@ const FILTER_PRESET_KEY = `${FILTER_KEY}.presets`;
 const DASHBOARD_ITEM_SELECT_EVENT = "dashboard:item-select";
 const DASHBOARD_ITEM_SELECT_KEY = "dashboard.item.select.v1";
 const ALERT_RULE_DRAFT_KEY = "alerts.draft.v1";
+const TIMELINE_DRILLDOWN_KEY = "timeline.drilldown.v1";
+const PIPELINE_DRILLDOWN_KEY = "pipelines.drilldown.v1";
 
 interface DashboardFilters {
   dateRange: ReturnType<typeof defaultDateRange>;
@@ -236,6 +239,64 @@ function downloadDashboardCsv({
     ]);
   }
   downloadCsv(`dashboard-${new Date().toISOString().slice(0, 10)}.csv`, columns, rows);
+}
+
+function GroupHealthHeader({
+  title,
+  accounts,
+  itemsByAccount,
+  latestEvent,
+  onShowIssues,
+  onOpenTimeline,
+}: {
+  title: string;
+  accounts: Account[];
+  itemsByAccount: Map<string, MonitorItem[]>;
+  latestEvent?: HistoryEvent;
+  onShowIssues: () => void;
+  onOpenTimeline: () => void;
+}) {
+  const items = accounts.flatMap((account) => itemsByAccount.get(account.id) ?? []);
+  const failures = items.filter((item) => item.status === "failure").length;
+  const warnings = items.filter((item) => item.status === "warning").length;
+  const active = items.filter((item) => item.status === "running" || item.status === "queued").length;
+  const successes = items.filter((item) => item.status === "success").length;
+  const affectedAccounts = accounts.filter((account) => (itemsByAccount.get(account.id) ?? []).some((item) => item.status === "failure" || item.status === "warning")).length;
+  const segments: BreakdownSegment[] = [
+    { id: "failure", label: "Failure", value: failures, tone: "bad" },
+    { id: "warning", label: "Warning", value: warnings, tone: "warn" },
+    { id: "active", label: "Active", value: active, tone: "info" },
+    { id: "success", label: "Success", value: successes, tone: "good" },
+  ];
+  return (
+    <div className="rounded-lg border border-separator bg-background/60 p-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+        <div className="min-w-0">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Text variant="strong" className="truncate">{title}</Text>
+            <Badge color={failures > 0 ? "red" : warnings > 0 ? "yellow" : "secondary"}>{affectedAccounts} affected</Badge>
+            <Badge color="secondary">{accounts.length} accounts</Badge>
+          </div>
+          <Text variant="small" color="tertiary" className="mt-1 block truncate">
+            {latestEvent ? `Latest ${latestEvent.type}: ${latestEvent.title} · ${formatRelativeTime(latestEvent.ts)}` : "No retained activity in the selected range."}
+          </Text>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant={failures + warnings > 0 ? "accent" : "glass"} size="small" onClick={onShowIssues}>
+            <AlertTriangle className="size-4" />
+            Issues
+          </Button>
+          <Button variant="glass" size="small" onClick={onOpenTimeline}>
+            <Clock3 className="size-4" />
+            Timeline
+          </Button>
+        </div>
+      </div>
+      <div className="mt-3">
+        <StatusStackBar segments={segments} emptyLabel="No current rows match this group and filter set." />
+      </div>
+    </div>
+  );
 }
 
 function alertRuleDraftFromMonitorItem(item: MonitorItem, account: Account | undefined): AlertRuleInput {
@@ -440,7 +501,6 @@ export function DashboardView() {
     status: filters.status === "all" ? undefined : filters.status,
     category: filters.category === "all" ? undefined : filters.category,
   });
-
   const itemsByAccount = new Map<string, MonitorItem[]>();
   for (const item of snapshot?.items ?? []) {
     if (!matchesStatus(item.status, filters.status)) continue;
@@ -481,6 +541,55 @@ export function DashboardView() {
       .filter((group) => group.accounts.length > 0),
     { id: UNGROUPED, title: "Ungrouped", accounts: accountsByGroup.get(UNGROUPED) ?? [] },
   ].filter((group) => group.accounts.length > 0);
+
+  const visibleItems = visibleAccounts.flatMap((account) => itemsByAccount.get(account.id) ?? []);
+  const statusSegments: BreakdownSegment[] = [
+    { id: "failure", label: "Failure", value: visibleItems.filter((item) => item.status === "failure").length, tone: "bad", onClick: () => setFilter("status", "failure") },
+    { id: "warning", label: "Warning", value: visibleItems.filter((item) => item.status === "warning").length, tone: "warn", onClick: () => setFilter("status", "warning") },
+    { id: "running", label: "Running", value: visibleItems.filter((item) => item.status === "running").length, tone: "info", onClick: () => setFilter("status", "running") },
+    { id: "queued", label: "Queued", value: visibleItems.filter((item) => item.status === "queued").length, tone: "warn", onClick: () => setFilter("status", "queued") },
+    { id: "success", label: "Success", value: visibleItems.filter((item) => item.status === "success").length, tone: "good", onClick: () => setFilter("status", "success") },
+    { id: "other", label: "Other", value: visibleItems.filter((item) => !["failure", "warning", "running", "queued", "success"].includes(item.status)).length, tone: "neutral" },
+  ];
+  const failedItems = visibleItems.filter((item) => item.status === "failure");
+  const warningItems = visibleItems.filter((item) => item.status === "warning");
+  const runningItems = visibleItems.filter((item) => item.status === "running" || item.status === "queued");
+  const pipelineItems = visibleItems.filter((item) => item.category === "run" || item.category === "deploy" || item.category === "release" || item.category === "migration");
+  const recentIncidentEvents = activityEvents.filter((event) => event.type === "incident");
+  const recentAlertEvents = activityEvents.filter((event) => event.type === "alert");
+  const latestEventForGroup = (groupId: string): HistoryEvent | undefined => activityEvents.find((event) => {
+    const account = accountsById.get(event.accountId);
+    return matchesEventGroup(event, account, groupsById, groupId);
+  });
+  const openTimelineForGroup = (groupId: string) => {
+    localStorage.setItem(TIMELINE_DRILLDOWN_KEY, JSON.stringify({
+      dateRange: filters.dateRange,
+      group: groupId,
+      provider: filters.provider,
+      account: filters.account,
+      type: "all",
+      status: filters.status,
+      category: filters.category,
+      owner: filters.owner,
+      tier: filters.tier,
+      dependency: filters.dependency,
+    }));
+    void navigate({ to: "/timeline" });
+  };
+  const openPipelines = (status?: NormalizedStatus) => {
+    localStorage.setItem(PIPELINE_DRILLDOWN_KEY, JSON.stringify({
+      dateRange: filters.dateRange,
+      provider: filters.provider,
+      account: filters.account,
+      group: filters.group,
+      status: status ?? "all",
+      category: "all",
+      owner: filters.owner,
+      tier: filters.tier,
+      dependency: filters.dependency,
+    }));
+    void navigate({ to: "/pipelines" });
+  };
 
   const groupOptions = [{ value: ALL_GROUPS, label: "All groups" }, { value: UNGROUPED, label: "Ungrouped" }, ...groups.map((group) => ({ value: group.id, label: group.name }))];
   const providerOptions = [{ value: "all", label: "All providers" }, ...(providersQuery.data ?? []).map((p) => ({ value: p.id, label: p.label }))];
@@ -572,45 +681,115 @@ export function DashboardView() {
   );
 
   return (
-    <ScrollArea title="Dashboard" actions={actions} className="h-full">
-      <div className="px-2 pb-8 flex flex-col gap-6">
+    <ScrollArea title="Health detail" actions={actions} className="h-full">
+      <div className="flex min-w-0 flex-col gap-6 px-2 pb-8">
         {accounts.length === 0 ? (
           <EmptyState
             title="No accounts connected"
             description="Connect provider accounts to start monitoring cross-app health."
             actions={<Button variant="accent" onClick={() => navigate({ to: "/accounts" })}>Add account</Button>}
           />
-        ) : visibleGroups.length === 0 ? (
+        ) : null}
+
+        {accounts.length > 0 && visibleGroups.length === 0 ? (
           <Callout color="secondary">
             <div className="flex items-center justify-between gap-3">
               <Text variant="small">No accounts match the current filters.</Text>
               <Button variant="glass" size="small" onClick={resetFilters}>Reset filters</Button>
             </div>
           </Callout>
-        ) : (
-          visibleGroups.map((group) => (
-            <section key={group.id} className="flex flex-col gap-3">
+        ) : null}
+
+        {accounts.length > 0 && visibleGroups.length > 0 ? (
+          <>
+            <section className="flex flex-col gap-3">
               <div className="flex items-center gap-2 px-2">
-                <Text variant="strong">{group.title}</Text>
-                <Badge color="secondary">{group.accounts.length}</Badge>
+                <Activity className="size-4 text-tertiary" />
+                <Text variant="strong">Health detail</Text>
+                <Badge color="secondary">{visibleItems.length} rows</Badge>
               </div>
-              <div className="flex flex-col gap-6">
-                {group.accounts.map((account) => (
-                  <AccountSection
-                    key={account.id}
-                    account={account}
-                    status={snapshot?.perAccount[account.id]}
-                    items={itemsByAccount.get(account.id) ?? []}
-                    onOpen={handleOpen}
-                    onViewLogs={handleViewLogs}
-                    onInvestigate={handleInvestigate}
-                    onCreateAlertRule={handleCreateAlertRule}
-                  />
-                ))}
+              <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]">
+                <div className="rounded-lg border border-separator bg-background/60 p-3">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div>
+                      <Text variant="small" color="secondary" className="block">Current rows by action state</Text>
+                      <Text variant="small" color="tertiary" className="block">{dateRangeLabel(filters.dateRange)} · click a segment or button to narrow the row list</Text>
+                    </div>
+                    <Text variant="small" color="tertiary" className="tabular-nums">{visibleItems.length} rows</Text>
+                  </div>
+                  <StatusStackBar segments={statusSegments} emptyLabel="No current rows match these filters." />
+                  <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                    <Button variant="glass" size="small" onClick={() => setFilter("status", "failure")} disabled={failedItems.length === 0}>
+                      Failed rows
+                      <Badge color={failedItems.length > 0 ? "red" : "secondary"}>{failedItems.length}</Badge>
+                    </Button>
+                    <Button variant="glass" size="small" onClick={() => setFilter("status", "warning")} disabled={warningItems.length === 0}>
+                      Warning rows
+                      <Badge color={warningItems.length > 0 ? "yellow" : "secondary"}>{warningItems.length}</Badge>
+                    </Button>
+                    <Button variant="glass" size="small" onClick={() => openPipelines()} disabled={pipelineItems.length === 0}>
+                      Pipeline rows
+                      <Badge color={pipelineItems.some((item) => item.status === "failure") ? "red" : "secondary"}>{pipelineItems.length}</Badge>
+                    </Button>
+                  </div>
+                </div>
+                <div className="rounded-lg border border-separator bg-background/60 p-3">
+                  <Text variant="small" color="secondary" className="block">Operational signals</Text>
+                  <div className="mt-3 flex flex-col gap-2">
+                    <Button variant="transparent" size="small" onClick={() => setFilter("status", "failure")} className="justify-between" disabled={failedItems.length === 0}>
+                      <span>Broken now</span>
+                      <Badge color={failedItems.length > 0 ? "red" : "secondary"}>{failedItems.length}</Badge>
+                    </Button>
+                    <Button variant="transparent" size="small" onClick={() => openPipelines("running")} className="justify-between" disabled={runningItems.length === 0}>
+                      <span>Running or queued</span>
+                      <Badge color={runningItems.length > 0 ? "blue" : "secondary"}>{runningItems.length}</Badge>
+                    </Button>
+                    <Button variant="transparent" size="small" onClick={() => void navigate({ to: "/incidents" })} className="justify-between" disabled={recentIncidentEvents.length === 0}>
+                      <span>Incidents in range</span>
+                      <Badge color={recentIncidentEvents.length > 0 ? "red" : "secondary"}>{recentIncidentEvents.length}</Badge>
+                    </Button>
+                    <Button variant="transparent" size="small" onClick={() => void navigate({ to: "/alerts" })} className="justify-between" disabled={recentAlertEvents.length === 0}>
+                      <span>Alerts in range</span>
+                      <Badge color={recentAlertEvents.length > 0 ? "yellow" : "secondary"}>{recentAlertEvents.length}</Badge>
+                    </Button>
+                  </div>
+                </div>
               </div>
             </section>
-          ))
-        )}
+
+            {visibleGroups.map((group) => {
+              const groupItems = group.accounts.flatMap((account) => itemsByAccount.get(account.id) ?? []);
+              const failures = groupItems.filter((item) => item.status === "failure").length;
+              const warnings = groupItems.filter((item) => item.status === "warning").length;
+              return (
+                <section key={group.id} className="flex flex-col gap-3">
+                  <GroupHealthHeader
+                    title={group.title}
+                    accounts={group.accounts}
+                    itemsByAccount={itemsByAccount}
+                    latestEvent={latestEventForGroup(group.id)}
+                    onShowIssues={() => setFilters({ ...filters, group: group.id, status: failures > 0 ? "failure" : warnings > 0 ? "warning" : "all" })}
+                    onOpenTimeline={() => openTimelineForGroup(group.id)}
+                  />
+                  <div className="flex flex-col gap-6">
+                    {group.accounts.map((account) => (
+                      <AccountSection
+                        key={account.id}
+                        account={account}
+                        status={snapshot?.perAccount[account.id]}
+                        items={itemsByAccount.get(account.id) ?? []}
+                        onOpen={handleOpen}
+                        onViewLogs={handleViewLogs}
+                        onInvestigate={handleInvestigate}
+                        onCreateAlertRule={handleCreateAlertRule}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </>
+        ) : null}
 
         {accounts.length > 0 ? (
           <section className="flex flex-col gap-2">

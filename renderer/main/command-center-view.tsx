@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import { AlertTriangle, BellPlus, CheckCircle2, ExternalLink, Gauge, LayoutDashboard, Moon, Plug, Radio, RefreshCw, SearchCheck, Siren, Target } from "lucide-react";
+import { AlertTriangle, BellPlus, CheckCircle2, ExternalLink, Gauge, GitBranch, LayoutDashboard, Moon, Plug, Radio, RefreshCw, SearchCheck, Siren, Target } from "lucide-react";
 import {
   Badge,
   Button,
@@ -23,7 +23,7 @@ import { useMonitorData, useMonitorSettings } from "./hooks/use-monitor-data";
 import { useRuleStates, useRules } from "./hooks/use-rules";
 import { useSloStatus } from "./hooks/use-slos";
 import { monitorApi } from "./ipc";
-import type { Account, AlertRule, HistoryEvent, HttpCheck, HttpCheckResult, LocalIncident, MaintenanceWindow, MonitorItem, ObservabilityIncident, RuleState, SloStatus } from "./types";
+import type { Account, AlertRule, HistoryEvent, HttpCheck, HttpCheckResult, LocalIncident, MaintenanceWindow, MonitorItem, ObservabilityIncident, Provider, RuleState, SloStatus } from "./types";
 
 const ACCOUNT_CREATE_KEY = "accounts.create.v1";
 const ACCOUNT_SELECT_KEY = "accounts.select.v1";
@@ -41,6 +41,8 @@ const INSIGHTS_FILTER_KEY = "insights.filters.v2";
 const TIMELINE_DRILLDOWN_KEY = "timeline.drilldown.v1";
 const UPTIME_CREATE_KEY = "uptime.create.v1";
 const UPTIME_DRILLDOWN_KEY = "uptime.drilldown.v1";
+const PROVIDER_WORKSPACE_FILTER_KEY = "providerWorkspace.filters.v1";
+const PIPELINE_DRILLDOWN_KEY = "pipelines.drilldown.v1";
 const DRILLDOWN_PADDING_MS = 60 * 60 * 1000;
 
 interface CommandAction {
@@ -568,6 +570,10 @@ export function CommandCenterView() {
   const firstAtRiskSlo = allAtRiskSlos[0];
   const firstAttentionAccount = allAccountsWithErrors[0] ?? allStaleAccounts[0];
   const firstFailedItem = allFailedItems[0] ?? allWarningItems[0];
+  const allPipelineItems = (snapshot?.items ?? []).filter((item) => item.category === "run" || item.category === "deploy" || item.category === "release" || item.category === "migration");
+  const failedPipelineItems = allPipelineItems.filter((item) => item.status === "failure");
+  const runningPipelineItems = allPipelineItems.filter((item) => item.status === "running" || item.status === "queued");
+  const firstPipelineIssue = failedPipelineItems[0] ?? runningPipelineItems[0];
 
   const openAccount = (account: Account) => {
     localStorage.setItem(ACCOUNT_SELECT_KEY, JSON.stringify({ accountId: account.id }));
@@ -578,6 +584,27 @@ export function CommandCenterView() {
     localStorage.setItem(DASHBOARD_ITEM_SELECT_KEY, JSON.stringify(payload));
     window.dispatchEvent(new CustomEvent(DASHBOARD_ITEM_SELECT_EVENT, { detail: payload }));
     void navigate({ to: "/dashboard" });
+  };
+  const openProviderWorkspace = (provider: Provider) => {
+    localStorage.setItem(PROVIDER_WORKSPACE_FILTER_KEY, JSON.stringify({ provider, range: "24h", search: "" }));
+    void navigate({ to: "/providers" });
+  };
+  const openPipelines = (scope: { provider?: Provider; account?: string; status?: string; category?: string; search?: string } = {}) => {
+    localStorage.setItem(PIPELINE_DRILLDOWN_KEY, JSON.stringify({
+      dateRange: { mode: "relative", range: "24h" },
+      provider: scope.provider ?? "all",
+      account: scope.account ?? "all",
+      group: "all",
+      status: scope.status ?? "all",
+      category: scope.category ?? "all",
+      actor: "all",
+      branch: "all",
+      owner: "all",
+      tier: "all",
+      dependency: "all",
+      search: scope.search ?? "",
+    }));
+    void navigate({ to: "/pipelines" });
   };
   const openIncident = (incident: ObservabilityIncident | LocalIncident) => {
     if ("id" in incident && !("uid" in incident)) {
@@ -660,6 +687,16 @@ export function CommandCenterView() {
       openInsightsForSlo(firstAtRiskSlo);
       return;
     }
+    if (firstPipelineIssue) {
+      openPipelines({
+        provider: firstPipelineIssue.provider,
+        account: firstPipelineIssue.accountId,
+        status: firstPipelineIssue.status,
+        category: firstPipelineIssue.category,
+        search: firstPipelineIssue.title,
+      });
+      return;
+    }
     if (firstAttentionAccount) {
       openAccount(firstAttentionAccount);
       return;
@@ -670,6 +707,13 @@ export function CommandCenterView() {
     }
     void navigate({ to: "/dashboard" });
   };
+
+  const providersNeedingReview = [...new Set([
+    ...allFailedItems.map((item) => item.provider),
+    ...allWarningItems.map((item) => item.provider),
+    ...allAttentionAccounts.map((account) => account.provider),
+    ...allActiveIncidents.map((incident) => "provider" in incident ? incident.provider : undefined),
+  ].filter((provider): provider is Provider => Boolean(provider)))].slice(0, 4);
 
   const candidateActions: Array<CommandAction | null> = [
     accounts.length === 0
@@ -876,6 +920,33 @@ export function CommandCenterView() {
             <Button variant={issueCount === 0 ? "glass" : "accent"} size="small" className="mt-4" onClick={primaryHealthAction}>
               {issueCount === 0 ? "Open dashboard" : "Review first issue"}
             </Button>
+
+            <div className="mt-4 space-y-2 border-t border-separator pt-4">
+              <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md p-2 text-left transition hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent" onClick={() => openPipelines({ status: "failure" })}>
+                <GitBranch className="size-4 text-tertiary" />
+                <span className="min-w-0">
+                  <Text variant="strong" className="block truncate">Failed pipelines</Text>
+                  <Text variant="small" color="tertiary" className="block truncate">Workflow runs, deploys, releases, or migrations that failed.</Text>
+                </span>
+                <Badge color={failedPipelineItems.length > 0 ? "red" : "secondary"}>{failedPipelineItems.length}</Badge>
+              </button>
+              <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md p-2 text-left transition hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent" onClick={() => openPipelines({ status: runningPipelineItems.some((item) => item.status === "running") ? "running" : "queued" })}>
+                <RefreshCw className="size-4 text-tertiary" />
+                <span className="min-w-0">
+                  <Text variant="strong" className="block truncate">Running now</Text>
+                  <Text variant="small" color="tertiary" className="block truncate">Pipeline work still queued or in progress.</Text>
+                </span>
+                <Badge color={runningPipelineItems.length > 0 ? "blue" : "secondary"}>{runningPipelineItems.length}</Badge>
+              </button>
+              <button className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-md p-2 text-left transition hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent" onClick={firstAttentionAccount ? () => openAccount(firstAttentionAccount) : () => void navigate({ to: "/accounts" })}>
+                <SearchCheck className="size-4 text-tertiary" />
+                <span className="min-w-0">
+                  <Text variant="strong" className="block truncate">Providers needing setup</Text>
+                  <Text variant="small" color="tertiary" className="block truncate">Sync errors, stale accounts, or missing verification.</Text>
+                </span>
+                <Badge color={allAttentionAccounts.length > 0 ? "yellow" : "secondary"}>{allAttentionAccounts.length}</Badge>
+              </button>
+            </div>
           </section>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -904,13 +975,36 @@ export function CommandCenterView() {
               onClick={() => openInsightsForSlo(firstAtRiskSlo)}
             />
             <MetricTile
-              icon={<AlertTriangle className="size-4" />}
-              label="Live rows"
-              value={formatNumber(liveAttentionCount)}
-              detail="Provider rows or uptime checks needing attention"
-              tone={liveAttentionCount > 0 ? "bad" : "good"}
-              onClick={liveAttentionCount > 0 ? openFirstIssue : () => void navigate({ to: "/dashboard" })}
+              icon={<GitBranch className="size-4" />}
+              label="Pipelines"
+              value={formatNumber(failedPipelineItems.length)}
+              detail={`${runningPipelineItems.length} running or queued`}
+              tone={failedPipelineItems.length > 0 ? "bad" : runningPipelineItems.length > 0 ? "warn" : "good"}
+              onClick={failedPipelineItems.length > 0 ? () => openPipelines({ status: "failure" }) : () => openPipelines()}
             />
+            <div className="sm:col-span-2">
+              <PanelShell title="Provider workspaces needing review" badge={providersNeedingReview.length}>
+                {providersNeedingReview.length === 0 ? (
+                  <Text variant="small" color="tertiary">No provider workspace currently has failing rows or setup warnings.</Text>
+                ) : (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {providersNeedingReview.map((provider) => {
+                      const Icon = providerIcon(provider);
+                      const count = allFailedItems.filter((item) => item.provider === provider).length + allWarningItems.filter((item) => item.provider === provider).length + allAttentionAccounts.filter((account) => account.provider === provider).length;
+                      return (
+                        <button key={provider} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-separator p-2 text-left hover:bg-control-subtle focus:outline-none focus:ring-2 focus:ring-accent" onClick={() => openProviderWorkspace(provider)}>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <Icon className="size-4 shrink-0 text-tertiary" />
+                            <Text variant="small" className="block truncate">{providerLabel(provider)}</Text>
+                          </span>
+                          <Badge color={count > 0 ? "yellow" : "secondary"}>{count}</Badge>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </PanelShell>
+            </div>
           </div>
         </div>
 

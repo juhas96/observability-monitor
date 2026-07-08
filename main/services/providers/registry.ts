@@ -9,6 +9,9 @@ import type {
   DashboardProviderQuery,
   DashboardPanelResult,
   DashboardQueryCapability,
+  HistoryEvent,
+  HistoryRange,
+  HistorySample,
   MetricsSummary,
   MonitorItem,
   MonitorLogResponse,
@@ -17,6 +20,10 @@ import type {
   Provider,
   ProviderCollectionArea,
   ProviderDeepLink,
+  ProviderWorkspaceAlertTemplate,
+  ProviderWorkspaceEvidenceRow,
+  ProviderWorkspaceResourceTable,
+  ProviderWorkspaceSeries,
 } from "../types.js";
 
 export interface CredentialField {
@@ -40,6 +47,26 @@ export interface ProviderInfo {
   collectionAreas?: ProviderCollectionArea[];
 }
 
+export interface ProviderWorkspaceContext {
+  account: Account;
+  range: HistoryRange;
+  items: MonitorItem[];
+  signals: ObservabilitySignal[];
+  incidents: ObservabilityIncident[];
+  metrics: MetricsSummary[];
+  deepLinks: ProviderDeepLink[];
+  retainedSamples: HistorySample[];
+  retainedEvents: HistoryEvent[];
+}
+
+export interface ProviderWorkspaceContribution {
+  series?: ProviderWorkspaceSeries[];
+  resources?: ProviderWorkspaceResourceTable[];
+  evidence?: ProviderWorkspaceEvidenceRow[];
+  alertTemplates?: ProviderWorkspaceAlertTemplate[];
+  warnings?: string[];
+}
+
 export interface ProviderDefinition extends ProviderInfo {
   /** Verify the credentials and resolve a display identity. Throws on failure. */
   validate(creds: Record<string, string>): Promise<{ identity?: string }>;
@@ -59,6 +86,8 @@ export interface ProviderDefinition extends ProviderInfo {
   getDashboardQueryCapabilities?(account: Account, creds: Record<string, string>): Promise<DashboardQueryCapability[]>;
   /** Run one live custom dashboard query. Renderer never receives provider credentials. */
   runDashboardQuery?(account: Account, creds: Record<string, string>, query: DashboardProviderQuery): Promise<DashboardPanelResult>;
+  /** Optional read-only provider workspace enrichment. Renderer never receives provider credentials or arbitrary API paths. */
+  buildWorkspace?(context: ProviderWorkspaceContext, creds: Record<string, string>): Promise<ProviderWorkspaceContribution>;
 }
 
 const registry = new Map<Provider, ProviderDefinition>();

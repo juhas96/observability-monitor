@@ -1472,7 +1472,7 @@ export function AlertsView() {
 
   return (
     <ScrollArea title="Alert rules" actions={actions} className="h-full">
-      <div className="px-2 pb-8 flex flex-col gap-3">
+      <div className="flex min-w-0 flex-col gap-3 px-2 pb-8">
         {(rulesQuery.data ?? []).length === 0 ? (
           <EmptyState
             title="No alert rules"

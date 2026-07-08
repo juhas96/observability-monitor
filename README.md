@@ -11,6 +11,8 @@ The main app includes:
 - Command Center at `/` for current issues, SLO risk, alert-rule evidence, notification suppression, and scoped handoffs
 - detailed grouped live account dashboard at `/dashboard` with retained history activity
 - Apps cockpit with local service ownership metadata, runbooks, dependencies, and health contributors
+- Provider workspaces at `/providers` with provider/account-scoped overview stats, retained charts, resource tables, logs/evidence rows, alert templates, setup guidance, and secret-free CSV/JSON export
+- responsive operational layouts that keep route content, toolbars, charts, section navigation, and tables usable at the app's 720px minimum window
 - shared investigation context for provider rows, retained events, uptime checks, and dashboard evidence without fetching secrets in the renderer
 - Custom Dashboards at `/dashboards` with Recharts panels, investigation templates, local normalized data panels, configured provider-declared live query panels, dedicated log/trace evidence renderers, row links, row search/sort, and CSV export
 - Insights, Timeline, Incidents, Uptime checks, Alert Rules, Accounts diagnostics, portable setup import/export, and notification channel settings

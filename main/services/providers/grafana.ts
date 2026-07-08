@@ -6,13 +6,16 @@
 
 import { parseObservabilityConfig, runGrafanaLogPreset } from "../grafana-observability.js";
 import type {
+  Account,
   DashboardPanelResult,
   DashboardProviderQuery,
   DashboardQueryCapability,
   DashboardSeriesPoint,
+  DashboardTableRow,
   MonitorItem,
   MonitorLogResponse,
   NormalizedStatus,
+  ProviderWorkspaceResourceTable,
 } from "../types.js";
 import type { ProviderDefinition } from "./registry.js";
 
@@ -520,6 +523,186 @@ async function fetchGrafanaLogs(accountId: string, item: MonitorItem): Promise<M
   };
 }
 
+function boolLabel(value: boolean): string {
+  return value ? "Enabled" : "Disabled";
+}
+
+function grafanaCollectionAreaRows(account: { lastSyncAt?: string; lastError?: string }, creds: Record<string, string>): DashboardTableRow[] {
+  return (grafanaProvider.collectionAreas ?? []).map((area) => {
+    const enabledState = area.defaultState === "always"
+      ? true
+      : area.id === "grafana.liveQueries"
+        ? liveQueriesEnabled(creds)
+        : area.configKey
+          ? enabled(creds, area.configKey, false)
+          : area.defaultState === "configured";
+    return {
+      area: area.label,
+      category: area.category,
+      enabled: boolLabel(enabledState),
+      configKey: area.configKey ?? "",
+      lastFetch: account.lastSyncAt ?? "",
+      lastError: account.lastError ?? "",
+      guidance: area.guidance,
+    };
+  });
+}
+
+async function grafanaAlertRuleRows(baseUrl: string, token: string): Promise<DashboardTableRow[]> {
+  const base = normalizeBase(baseUrl);
+  const rules = await grafanaFetch<GrafanaRulesResponse>(baseUrl, token, "/api/prometheus/grafana/api/v1/rules");
+  const rows: DashboardTableRow[] = [];
+  for (const group of rules.data?.groups ?? []) {
+    for (const rule of group.rules ?? []) {
+      rows.push(resultRow({
+        group: group.name,
+        file: group.file,
+        name: rule.name,
+        state: rule.state ?? "unknown",
+        lastEvaluation: rule.lastEvaluation,
+        labels: rule.labels,
+        __url: `${base}/alerting/list`,
+        __urlLabel: "Open alerting",
+      }));
+    }
+  }
+  return rows;
+}
+
+function grafanaQueryConfigRows(baseUrl: string, creds: Record<string, string>): DashboardTableRow[] {
+  const config = parseObservabilityConfig(creds.grafanaObservability);
+  return [
+    {
+      feature: "Dashboard search",
+      enabled: boolLabel(enabled(creds, "showDashboards", DEFAULT_SHOW_DASHBOARDS)),
+      value: [creds.dashboardQuery ? `query=${creds.dashboardQuery}` : "", csv(creds.dashboardTags).length > 0 ? `tags=${csv(creds.dashboardTags).join(", ")}` : ""].filter(Boolean).join(" · "),
+      action: "Enable dashboard search and provide a query or tags to collect dashboard inventory.",
+      __url: `${normalizeBase(baseUrl)}/dashboards`,
+      __urlLabel: "Open dashboards",
+    },
+    {
+      feature: "Annotations",
+      enabled: boolLabel(enabled(creds, "showAnnotations", DEFAULT_SHOW_ANNOTATIONS)),
+      value: csv(creds.annotationTags).join(", "),
+      action: "Enable annotations and scope tags to collect deploy or incident markers.",
+      __url: `${normalizeBase(baseUrl)}/annotations`,
+      __urlLabel: "Open annotations",
+    },
+    {
+      feature: "Loki presets",
+      enabled: boolLabel(config.logPresets.length > 0 || Boolean(config.lokiDataSourceUid)),
+      value: [config.lokiDataSourceUid ? `uid=${config.lokiDataSourceUid}` : "", `${config.logPresets.length} presets`].filter(Boolean).join(" · "),
+      action: "Save Loki data source settings or presets to populate log actions and live dashboard panels.",
+      __url: `${normalizeBase(baseUrl)}/explore`,
+      __urlLabel: "Open Explore",
+    },
+    {
+      feature: "Tempo presets",
+      enabled: boolLabel(config.tracePresets.length > 0 || Boolean(config.tempoDataSourceUid)),
+      value: [config.tempoDataSourceUid ? `uid=${config.tempoDataSourceUid}` : "", `${config.tracePresets.length} presets`].filter(Boolean).join(" · "),
+      action: "Save Tempo data source settings or presets to populate trace panels.",
+      __url: `${normalizeBase(baseUrl)}/explore`,
+      __urlLabel: "Open Explore",
+    },
+    {
+      feature: "Live dashboard queries",
+      enabled: boolLabel(liveQueriesEnabled(creds)),
+      value: "",
+      action: "Enable live queries or save Loki/Tempo presets to discover Loki, Tempo, and Prometheus capabilities.",
+      __url: `${normalizeBase(baseUrl)}/connections/datasources`,
+      __urlLabel: "Open data sources",
+    },
+  ];
+}
+
+function grafanaCapabilityRows(capabilities: DashboardQueryCapability[]): DashboardTableRow[] {
+  return capabilities.map((capability) => ({
+    capability: capability.label,
+    id: capability.id,
+    language: capability.queryLanguage ?? "",
+    result: capability.resultKind,
+    requiresQuery: capability.requiresQuery,
+    defaultPanel: capability.defaultPanel ? "Available" : "",
+    action: capability.defaultPanel ? "Create from Custom Dashboards panel menu" : "Use as a provider dashboard query source",
+  }));
+}
+
+async function grafanaWorkspaceTables(account: Account, creds: Record<string, string>): Promise<ProviderWorkspaceResourceTable[]> {
+  const tables: ProviderWorkspaceResourceTable[] = [
+    {
+      id: "grafana.collectionAreas",
+      label: "Configured collection areas",
+      description: "What this account is configured to collect, when it last fetched, and what setup action unlocks more useful evidence.",
+      columns: ["area", "category", "enabled", "configKey", "lastFetch", "lastError", "guidance"],
+      rows: grafanaCollectionAreaRows(account, creds),
+      emptyDetail: "Grafana collection areas are declared by the provider registry.",
+    },
+    {
+      id: "grafana.queryConfig",
+      label: "Dashboard and annotation query configuration",
+      description: "Read-only setup state for dashboards, annotations, Loki, Tempo, and live dashboard queries.",
+      columns: ["feature", "enabled", "value", "action"],
+      rows: grafanaQueryConfigRows(creds.baseUrl, creds),
+      emptyDetail: "Configure Grafana dashboard, annotation, or observability settings to populate this table.",
+    },
+  ];
+
+  try {
+    tables.push({
+      id: "grafana.alertRules",
+      label: "Alert rules",
+      description: "Grafana alert rules with state and last evaluation. This is read-only.",
+      columns: ["group", "file", "name", "state", "lastEvaluation", "labels"],
+      rows: await grafanaAlertRuleRows(creds.baseUrl, creds.token),
+      emptyDetail: "No Grafana alert rules were returned by the readable alerting API.",
+    });
+  } catch (error) {
+    tables.push({
+      id: "grafana.alertRules",
+      label: "Alert rules",
+      description: "Grafana alert rules with state and last evaluation. This is read-only.",
+      columns: ["error"],
+      rows: [{ error: error instanceof Error ? error.message : String(error) }],
+      emptyDetail: "Grafana alert rules could not be read.",
+    });
+  }
+
+  if (enabled(creds, "showDataSourceHealth", DEFAULT_SHOW_DATA_SOURCE_HEALTH)) {
+    try {
+      const dataSources = await runDashboardDataSources(creds.baseUrl, creds.token);
+      tables.push({
+        id: "grafana.dataSourceHealth",
+        label: "Data source health",
+        description: "Name, UID, type, health status, message, and a link to the Grafana data source.",
+        columns: dataSources.columns ?? ["name", "uid", "type", "status", "message"],
+        rows: dataSources.rows ?? [],
+        emptyDetail: "No Grafana data sources were returned by the readable data source API.",
+      });
+    } catch (error) {
+      tables.push({
+        id: "grafana.dataSourceHealth",
+        label: "Data source health",
+        description: "Name, UID, type, health status, message, and a link to the Grafana data source.",
+        columns: ["error"],
+        rows: [{ error: error instanceof Error ? error.message : String(error) }],
+        emptyDetail: "Grafana data source health could not be read.",
+      });
+    }
+  }
+
+  const capabilities = await grafanaProvider.getDashboardQueryCapabilities?.(account, creds) ?? [];
+  tables.push({
+    id: "grafana.liveCapabilities",
+    label: "Discovered Loki, Tempo, and Prometheus capabilities",
+    description: "Live query sources that can be used to create relevant custom dashboard panels.",
+    columns: ["capability", "id", "language", "result", "requiresQuery", "defaultPanel", "action"],
+    rows: grafanaCapabilityRows(capabilities),
+    emptyDetail: "Enable live queries or save Loki/Tempo settings to discover Grafana query capabilities.",
+  });
+
+  return tables;
+}
+
 async function fetchAlerts(accountId: string, baseUrl: string, token: string): Promise<MonitorItem[]> {
   const base = normalizeBase(baseUrl);
   const rules = await grafanaFetch<GrafanaRulesResponse>(
@@ -802,6 +985,28 @@ export const grafanaProvider: ProviderDefinition = {
   },
   async fetchLogs(account, _creds, item) {
     return await fetchGrafanaLogs(account.id, item);
+  },
+  async buildWorkspace(context, creds) {
+    const resources = await grafanaWorkspaceTables(context.account, creds);
+    const failures = context.items.filter((item) => item.status === "failure" || item.status === "warning");
+    return {
+      resources,
+      evidence: failures.slice(0, 20).map((item) => ({
+        id: `grafana-workspace:${item.uid}`,
+        ts: item.updatedAt,
+        type: "item",
+        title: item.title,
+        subtitle: [item.category, item.subtitle, item.conclusion].filter(Boolean).join(" · "),
+        status: item.status,
+        accountId: item.accountId,
+        accountLabel: context.account.label,
+        category: item.category,
+        url: item.logFallbackUrl ?? item.url,
+        logAvailable: item.logAvailable,
+        sourceUid: item.uid,
+      })),
+      warnings: liveQueriesEnabled(creds) ? [] : ["Enable Grafana live queries or save Loki/Tempo presets to discover log, trace, and Prometheus dashboard capabilities."],
+    };
   },
   async getDashboardQueryCapabilities(_account, creds) {
     if (!liveQueriesEnabled(creds)) return [];

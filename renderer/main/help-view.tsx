@@ -47,9 +47,9 @@ const HELP_ARTICLES: HelpArticle[] = [
     route: "/accounts",
     steps: [
       { title: "Add at least one provider account", body: "Open Accounts, choose Add account, select a provider, enter the required token and non-secret configuration fields, then test the connection before saving." },
-      { title: "Use project groups for services", body: "Assign related provider accounts to the same project group so Apps, Dashboard, Timeline, SLOs, uptime checks, and scoped rules can treat them as one service." },
+      { title: "Use project groups for services", body: "Assign related provider accounts to the same project group so Services, Health detail, Pipelines, Timeline, SLOs, uptime checks, and scoped rules can treat them as one service." },
       { title: "Run live smoke verification", body: "Use Accounts -> Live smoke verification after adding credentials. Leave channel delivery tests disabled unless you intentionally want to send real test messages." },
-      { title: "Add reliability surfaces", body: "Create uptime checks, alert rules, and dashboards only after the first poll has produced real account data." },
+      { title: "Add reliability surfaces", body: "Create uptime checks and alert rules after the first poll has produced real account data. Use Custom Dashboards later for advanced panels; core provider triage lives in Command Center, Pipelines, Services, Incidents, Observability, Uptime, Alerts, and Providers." },
     ],
     outputs: ["Connected account rows", "Project groups", "Credential diagnostics", "Provider capability matrix", "Smoke verification report"],
     gotchas: ["Imported setup bundles never include tokens, so imported accounts stay disabled until credentials are added.", "History starts after polling; a fresh install will not have trends immediately."],
@@ -94,26 +94,44 @@ const HELP_ARTICLES: HelpArticle[] = [
     summary: "Use the first screen to decide what needs attention now.",
     route: "/",
     steps: [
-      { title: "Start with current issues", body: "Review the system health band for live failures, warnings, incidents, alert rules, SLO risk, down checks, stale accounts, and notification suppression." },
-      { title: "Follow suggested actions", body: "Rows hand off to the exact destination view, such as a specific account diagnostic, uptime check filter, firing alert rule, SLO scope, incident, or dashboard item logs." },
+      { title: "Start with task modules", body: "Review failed pipelines, running work, open incidents by service, noisy alert state, providers needing setup, down checks, SLO risk, and current row-level attention before opening detail views." },
+      { title: "Follow direct drilldowns", body: "Rows and action buttons hand off to the exact destination view, such as Pipelines, provider workspaces, Timeline context, account diagnostics, uptime checks, firing rules, SLO scopes, incidents, or health-detail item logs." },
       { title: "Check suppression before paging", body: "Use the suppression panel to see global snooze, maintenance windows, and per-rule snoozes before assuming notifications are broken." },
     ],
-    outputs: ["Current issue count", "Suggested next actions", "Live attention queue", "Firing rule evidence", "SLO risk evidence", "Suppression status"],
+    outputs: ["Task-focused health modules", "Failed and running pipeline handoffs", "Provider setup handoffs", "Suggested next actions", "Live attention queue", "Suppression status"],
     gotchas: ["Command Center summarizes existing data; it does not add storage or provider calls beyond the shared app queries.", "A clean page with no accounts may still need setup rather than triage."],
     keywords: ["command center", "summary", "issues", "suppression", "slo", "alerts", "incidents"],
   },
   {
+    id: "pipelines",
+    sectionId: "daily",
+    title: "Pipelines",
+    summary: "Triage GitHub Actions, Cloudflare deploys, Netlify deploys, Heroku releases, Supabase migrations, and other pipeline-like rows.",
+    route: "/pipelines",
+    steps: [
+      { title: "Start with running and failed work", body: "Use Running or queued now and Failed recently to see work that is still moving or already needs investigation." },
+      { title: "Review impact correlation", body: "Deploys before failures or incidents shows pipeline rows followed by retained failure or incident events on the same account within the correlation window." },
+      { title: "Filter by ownership and context", body: "Use range, provider, account, service, status, pipeline type, actor, branch/context, owner, tier, dependency, and search filters to narrow rows." },
+      { title: "Act from a row", body: "Open provider evidence, inspect logs when available, create a local incident, or draft a scoped alert rule from the pipeline row." },
+    ],
+    outputs: ["Running/queued rows", "Failed pipeline rows", "Recent deploys/releases/runs/migrations", "Failure and incident correlations", "Log, incident, alert, provider-link actions", "Filtered CSV"],
+    gotchas: ["Pipelines uses normalized monitor rows with categories run, deploy, release, and migration; missing branch, actor, duration, or commit fields mean the provider adapter did not supply them.", "The page stays read-only and does not rerun workflows, redeploy, roll back, or mutate providers."],
+    keywords: ["pipelines", "deploys", "runs", "release", "migration", "github actions", "cloudflare", "netlify", "heroku", "supabase"],
+  },
+  {
     id: "dashboard",
     sectionId: "daily",
-    title: "Detailed Dashboard",
-    summary: "Review live provider rows grouped by project and account.",
+    title: "Health detail",
+    summary: "Review live provider rows grouped by project and account without generic overview charts.",
     route: "/dashboard",
     steps: [
+      { title: "Use the health summary", body: "Start with current action-state counts, failed rows, warning rows, pipeline rows, incidents, and alerts. Each control filters rows or opens the relevant operational view." },
       { title: "Filter the current view", body: "Use date, group, provider, account, status, category, owner, tier, and dependency filters to narrow live rows and retained activity." },
+      { title: "Use group headers", body: "Each project group shows affected accounts, latest retained activity, a status stack, and quick actions for issue filtering or Timeline drilldown." },
       { title: "Open evidence", body: "Use row actions to open provider pages, inspect logs when available, start an investigation, or draft an alert rule from a failure or incident." },
       { title: "Export the filtered evidence", body: "Export CSV to capture account summaries, current monitor items, and retained activity rows with provider, account, group, status, category, link, and service metadata." },
     ],
-    outputs: ["Grouped account sections", "Current monitor rows", "Activity in range", "Log/detail dialogs", "Filtered CSV"],
+    outputs: ["Action-state summary", "Failed/warning/pipeline filters", "Grouped account sections", "Current monitor rows", "Activity in range", "Filtered CSV"],
     gotchas: ["Live log polling is available only for providers that expose it.", "Retained activity depends on local history retention and polling cadence."],
     keywords: ["dashboard", "logs", "activity", "csv", "filters", "provider rows"],
   },
@@ -131,6 +149,24 @@ const HELP_ARTICLES: HelpArticle[] = [
     outputs: ["Service health contributors", "Provider coverage", "Deep links", "Dependency overview", "Service metadata"],
     gotchas: ["Service metadata is local only and does not write back to providers.", "Apps needs at least one account and a poll snapshot before health can be derived."],
     keywords: ["apps", "services", "owner", "tier", "runbook", "dependencies", "metadata"],
+  },
+  {
+    id: "provider-workspaces",
+    sectionId: "daily",
+    title: "Provider workspaces",
+    summary: "Deep-dive into one provider with native inventory, health, evidence, alert templates, exports, and setup guidance.",
+    route: "/providers",
+    steps: [
+      { title: "Pick a provider and scope", body: "Open Providers from the sidebar or command palette, choose a provider, optionally narrow to one account, and select a retained-history range." },
+      { title: "Read overview and health first", body: "The overview tiles summarize connected accounts, current rows, incidents, retained activity, and setup issues. Health charts use real retained samples and events from polling." },
+      { title: "Inspect native inventory and evidence", body: "Inventory tables use provider-specific labels and columns where adapters supply them. Evidence combines retained events, log-capable rows, incidents, signals, and provider deep links." },
+      { title: "Use setup rows", body: "Setup shows collection areas with state, config keys, and what action populates each area instead of a plain badge grid." },
+      { title: "Act without write access", body: "Open vendor evidence links, jump to Pipelines for run/deploy/release/migration rows, create scoped alert-rule drafts from templates, refresh the selected account or provider, and export the workspace as CSV or JSON." },
+      { title: "Use narrow windows", body: "Provider controls wrap, exports move into a compact menu, section navigation becomes horizontal, and tables scroll inside their panels so the workspace remains usable at the app minimum window width." },
+    ],
+    outputs: ["Provider/account picker", "Status and activity charts", "Provider-native inventory tables", "Evidence rows", "Actionable setup rows", "Alert templates", "Secret-free CSV/JSON export"],
+    gotchas: ["Provider workspaces are read-only; they do not edit DNS, purge caches, deploy Workers, acknowledge incidents, or mutate vendor resources.", "Backend adapters may use credentials to enrich a workspace, but the renderer receives only typed secret-free sections.", "Fresh accounts need at least one poll before history-backed charts appear.", "Unavailable sections mean the app lacks retained data, readable scope, or current rows for the selected scope, not that mock data was hidden."],
+    keywords: ["providers", "workspace", "health", "inventory", "evidence", "logs", "exports", "alert templates", "responsive", "grafana"],
   },
   {
     id: "insights",
@@ -211,16 +247,17 @@ const HELP_ARTICLES: HelpArticle[] = [
     id: "custom-dashboards",
     sectionId: "dashboards",
     title: "Custom Dashboards",
-    summary: "Build persistent local and live provider dashboards.",
+    summary: "Build persistent local and live provider dashboards for advanced/custom views.",
     route: "/dashboards",
     steps: [
+      { title: "Use after core screens", body: "Use Command Center, Pipelines, Services, Incidents, Observability, Uptime, Alerts, and Providers for core operations. Use Custom Dashboards when you need a persistent advanced view or custom live provider query." },
       { title: "Create from scratch or template", body: "Create dashboards manually or from investigation starter templates for service health, incidents, deploy correlation, provider reliability, uptime/SLOs, ownership, and configured Grafana logs/traces." },
       { title: "Configure panels", body: "Choose visualization, width, height, range override, refresh override, source scope, default panel, custom query, provider params, and x/y mappings where applicable." },
       { title: "Use variables and runtime filters", body: "Dashboard variables persist non-secret defaults for group, provider, account, check, owner, tier, and dependency. Runtime filters temporarily override local panels unless a panel has a narrower explicit scope." },
       { title: "Import, export, and copy", body: "Use the More menu to refresh panels, edit, duplicate, export, import, and open templates. Dashboard exports never include secrets, and panels can be copied between dashboards." },
     ],
     outputs: ["Timeseries, stat, table, log, trace, and event panels", "Bounded stacked metrics and evidence rows", "Panel CSV export", "Dashboard JSON export"],
-    gotchas: ["Live provider panels never receive dashboard runtime filters; they use their configured account, capability, params, and query.", "Configured-only provider areas must be enabled on the account before live log, trace, metric, dashboard, or data-source panels are discovered.", "Custom SQL or HogQL panels are read-only, SELECT-only, semicolon-free, and capped by provider limits."],
+    gotchas: ["Custom Dashboards are advanced/custom, not the required path for core provider features.", "Live provider panels never receive dashboard runtime filters; they use their configured account, capability, params, and query.", "Configured-only provider areas must be enabled on the account before live log, trace, metric, dashboard, or data-source panels are discovered.", "Custom SQL or HogQL panels are read-only, SELECT-only, semicolon-free, and capped by provider limits."],
     keywords: ["dashboards", "panels", "recharts", "provider query", "variables", "import", "export"],
   },
   {
@@ -487,7 +524,7 @@ export function HelpView() {
 
   return (
     <ScrollArea title="Help" actions={actions} className="h-full">
-      <div className="flex flex-col gap-4 px-2 pb-8">
+      <div className="flex min-w-0 flex-col gap-4 px-2 pb-8">
         <section className="rounded-lg border border-separator p-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 max-w-3xl">

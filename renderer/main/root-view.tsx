@@ -1,6 +1,6 @@
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import * as React from "react";
-import { BellPlus, CircleHelp, Gauge, GitCommitHorizontal, LayoutDashboard, LineChart, PanelsTopLeft, Plug, Radio, Siren } from "lucide-react";
+import { BellPlus, Blocks, CircleHelp, Gauge, GitBranch, LayoutDashboard, LineChart, PanelsTopLeft, Plug, Radio, Siren } from "lucide-react";
 import { SplitView, Sidebar, SidebarList, SidebarListItem, Status } from "@glaze/core/components";
 import { useTheme, useConnection, useEnvironment } from "@glaze/core/hooks";
 import { CommandPalette } from "./components/command-palette";
@@ -15,15 +15,16 @@ interface NavItem {
 
 const NAV_ITEMS: NavItem[] = [
   { path: "/", label: "Command Center", icon: <Gauge className="size-4" />, shortcut: "1" },
-  { path: "/dashboard", label: "Dashboard", icon: <LayoutDashboard className="size-4" />, shortcut: "2" },
-  { path: "/apps", label: "Apps", icon: <PanelsTopLeft className="size-4" />, shortcut: "3" },
-  { path: "/insights", label: "Insights", icon: <LineChart className="size-4" />, shortcut: "4" },
+  { path: "/pipelines", label: "Pipelines", icon: <GitBranch className="size-4" />, shortcut: "2" },
+  { path: "/dashboard", label: "Health detail", icon: <LayoutDashboard className="size-4" />, shortcut: "3" },
+  { path: "/apps", label: "Services", icon: <PanelsTopLeft className="size-4" />, shortcut: "4" },
   { path: "/incidents", label: "Incidents", icon: <Siren className="size-4" />, shortcut: "5" },
-  { path: "/timeline", label: "Timeline", icon: <GitCommitHorizontal className="size-4" />, shortcut: "6" },
+  { path: "/insights", label: "Observability", icon: <LineChart className="size-4" />, shortcut: "6" },
   { path: "/uptime", label: "Uptime", icon: <Radio className="size-4" />, shortcut: "7" },
-  { path: "/alerts", label: "Alert rules", icon: <BellPlus className="size-4" />, shortcut: "8" },
-  { path: "/dashboards", label: "Dashboards", icon: <LayoutDashboard className="size-4" />, shortcut: "9" },
-  { path: "/accounts", label: "Accounts", icon: <Plug className="size-4" />, shortcut: "0" },
+  { path: "/alerts", label: "Alerts", icon: <BellPlus className="size-4" />, shortcut: "8" },
+  { path: "/providers", label: "Providers", icon: <Blocks className="size-4" />, shortcut: "9" },
+  { path: "/dashboards", label: "Dashboards", icon: <LayoutDashboard className="size-4" /> },
+  { path: "/accounts", label: "Setup", icon: <Plug className="size-4" />, shortcut: "0" },
   { path: "/help", label: "Help", icon: <CircleHelp className="size-4" /> },
 ];
 
@@ -91,7 +92,9 @@ export function RootView() {
   return (
     <div className="h-full relative">
       <SplitView className="h-full" sidebar={<AppSidebar />} storageKey="cicd-monitor">
-        <Outlet />
+        <div className="h-full min-w-0 overflow-hidden">
+          <Outlet />
+        </div>
       </SplitView>
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />

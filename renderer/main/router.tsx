@@ -17,6 +17,8 @@ const AlertsView = React.lazy(() => import("./alerts-view").then((m) => ({ defau
 const AppsView = React.lazy(() => import("./apps-view").then((m) => ({ default: m.AppsView })));
 const InsightsView = React.lazy(() => import("./insights-view").then((m) => ({ default: m.InsightsView })));
 const IncidentsView = React.lazy(() => import("./incidents-view").then((m) => ({ default: m.IncidentsView })));
+const PipelinesView = React.lazy(() => import("./pipelines-view").then((m) => ({ default: m.PipelinesView })));
+const ProviderWorkspaceView = React.lazy(() => import("./provider-workspace-view").then((m) => ({ default: m.ProviderWorkspaceView })));
 const TimelineView = React.lazy(() => import("./timeline-view").then((m) => ({ default: m.TimelineView })));
 const DashboardsView = React.lazy(() => import("./dashboards-view").then((m) => ({ default: m.DashboardsView })));
 const HelpView = React.lazy(() => import("./help-view").then((m) => ({ default: m.HelpView })));
@@ -83,7 +85,25 @@ const appsRoute = createRoute({
   path: "/apps",
   component: withSuspense(AppsView),
   staticData: {
-    title: "Apps",
+    title: "Services",
+  },
+});
+
+const pipelinesRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/pipelines",
+  component: withSuspense(PipelinesView),
+  staticData: {
+    title: "Pipelines",
+  },
+});
+
+const providersRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/providers",
+  component: withSuspense(ProviderWorkspaceView),
+  staticData: {
+    title: "Providers",
   },
 });
 
@@ -154,6 +174,8 @@ const routeTree = rootRoute.addChildren([
   commandCenterRoute,
   dashboardRoute,
   appsRoute,
+  pipelinesRoute,
+  providersRoute,
   insightsRoute,
   incidentsRoute,
   timelineRoute,

@@ -1981,7 +1981,7 @@ export function IncidentsView() {
       }
       className="h-full"
     >
-      <div className="px-2 pb-8 grid grid-cols-1 2xl:grid-cols-[minmax(22rem,28rem)_1fr] gap-6">
+      <div className="grid min-w-0 grid-cols-1 gap-6 px-2 pb-8 2xl:grid-cols-[minmax(22rem,28rem)_1fr]">
         {items.length === 0 && allLocalIncidents.length === 0 ? (
           <EmptyState title="No active alerts or incidents" description="The incident center fills from local incidents and live provider signals." />
         ) : (

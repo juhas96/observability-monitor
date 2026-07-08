@@ -2572,7 +2572,7 @@ export function DashboardsView() {
 
   return (
     <ScrollArea title="Dashboards" actions={actions} className="h-full">
-      <div className="px-2 pb-8 flex flex-col gap-4">
+      <div className="flex min-w-0 flex-col gap-4 px-2 pb-8">
         {!dashboard ? (
           <EmptyState
             title="No custom dashboards"

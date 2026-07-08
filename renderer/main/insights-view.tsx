@@ -591,7 +591,7 @@ export function InsightsView() {
 
   return (
     <ScrollArea title="Insights" actions={actions} className="h-full">
-      <div className="px-2 pb-8 flex flex-col gap-6">
+      <div className="flex min-w-0 flex-col gap-6 px-2 pb-8">
         {series.length === 0 ? (
           hasRetainedHistory ? (
             <EmptyState title="No history matches filters" description="Adjust the range or reset filters to show retained samples.">
