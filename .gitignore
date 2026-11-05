@@ -13,3 +13,5 @@ Thumbs.db
 
 # Glaze agent temporary files
 tmp/*
+
+.idea

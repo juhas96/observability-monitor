@@ -10,13 +10,21 @@ import { randomUUID } from "crypto";
 
 import { ipcMain, logger } from "@glaze/core/backend";
 
-import { addAccount, getAccount, listAccounts, removeAccount, updateAccount } from "../services/accounts-store.js";
+import {
+  addAccount,
+  getAccount,
+  listAccounts,
+  listGroups,
+  removeAccount,
+  resolveGroupAssignment,
+  updateAccount,
+} from "../services/accounts-store.js";
 import * as registry from "../services/providers/index.js";
 import * as poller from "../services/poller.js";
 import { getToken, removeToken, setToken } from "../services/token-store.js";
 import { pushSnapshot } from "../services/push.js";
 import * as aggregator from "../services/aggregator.js";
-import type { Account, Provider } from "../services/types.js";
+import type { Account, ProjectGroup, Provider } from "../services/types.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null) {
@@ -44,6 +52,28 @@ function asCreds(value: unknown): Record<string, string> {
     if (typeof v === "string") creds[k] = v;
   }
   return creds;
+}
+
+function asOptionalString(value: unknown, field: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string") {
+    throw new Error(`Invalid "${field}".`);
+  }
+  return value;
+}
+
+function asOptionalGroupId(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value === "string") return value.trim();
+  throw new Error('Invalid "groupId".');
+}
+
+function groupInput(req: Record<string, unknown>): { groupId?: string | null; newGroupName?: string } {
+  return {
+    groupId: asOptionalGroupId(req.groupId),
+    newGroupName: asOptionalString(req.newGroupName, "newGroupName"),
+  };
 }
 
 /** Split a creds map into the encrypted secret value + persisted non-secret config. */
@@ -75,6 +105,10 @@ export function registerAccountHandlers(): void {
     return await listAccounts();
   });
 
+  ipcMain.handle("groups:list", async (): Promise<ProjectGroup[]> => {
+    return await listGroups();
+  });
+
   ipcMain.handle("accounts:test", async (_event, payload: unknown) => {
     const req = asRecord(payload);
     const provider = asProvider(req.provider);
@@ -100,11 +134,13 @@ export function registerAccountHandlers(): void {
 
     const secretKey = registry.secretField(provider).key;
     const { identity } = await registry.get(provider).validate({ ...config, ...(secret ? { [secretKey]: secret } : {}) });
+    const groupId = await resolveGroupAssignment(groupInput(req));
 
     const account: Account = {
       id: randomUUID(),
       provider,
       label,
+      groupId,
       createdAt: new Date().toISOString(),
       enabled: true,
       identity,
@@ -128,6 +164,9 @@ export function registerAccountHandlers(): void {
     const secretKey = registry.secretField(provider).key;
 
     const patch: Partial<Account> = {};
+    const hasGroupPatch = req.groupId !== undefined || req.newGroupName !== undefined;
+    const nextGroupInput = hasGroupPatch ? groupInput(req) : undefined;
+    let secretToStore: string | undefined;
     if (typeof req.label === "string") patch.label = req.label.trim();
     if (typeof req.enabled === "boolean") patch.enabled = req.enabled;
 
@@ -143,8 +182,11 @@ export function registerAccountHandlers(): void {
         .validate({ ...mergedConfig, ...(effectiveSecret ? { [secretKey]: effectiveSecret } : {}) });
       patch.config = mergedConfig;
       patch.identity = identity;
-      if (secret) await setToken(id, secret);
+      secretToStore = secret;
     }
+
+    if (nextGroupInput) patch.groupId = await resolveGroupAssignment(nextGroupInput);
+    if (secretToStore) await setToken(id, secretToStore);
 
     const account = await updateAccount(id, patch);
     void poller.refresh(account.id);

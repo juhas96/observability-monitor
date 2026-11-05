@@ -3,14 +3,22 @@
  * tokens live in the encrypted token-store keyed by account id.
  */
 
+import { randomUUID } from "crypto";
+
 import { DataStore } from "./data-store.js";
-import type { Account } from "./types.js";
+import type { Account, ProjectGroup } from "./types.js";
+
+interface StoredAccountsFile {
+  accounts: Account[];
+  groups?: ProjectGroup[];
+}
 
 interface AccountsFile {
   accounts: Account[];
+  groups: ProjectGroup[];
 }
 
-const store = new DataStore<AccountsFile>("accounts.json", { accounts: [] });
+const store = new DataStore<StoredAccountsFile>("accounts.json", { accounts: [], groups: [] });
 
 /**
  * Map any legacy account shape (per-provider `login`/`accountName`/
@@ -37,9 +45,32 @@ function migrate(account: Account): Account {
   };
 }
 
+function normalize(file: StoredAccountsFile): AccountsFile {
+  return {
+    accounts: file.accounts.map(migrate),
+    groups: file.groups ?? [],
+  };
+}
+
+function pruneUnusedGroups(file: AccountsFile): AccountsFile {
+  const used = new Set(file.accounts.map((account) => account.groupId).filter((id): id is string => Boolean(id)));
+  return {
+    ...file,
+    groups: file.groups.filter((group) => used.has(group.id)),
+  };
+}
+
+async function loadFile(): Promise<AccountsFile> {
+  return normalize(await store.load());
+}
+
+async function saveFile(file: AccountsFile): Promise<void> {
+  await store.save(file);
+}
+
 export async function listAccounts(): Promise<Account[]> {
-  const file = await store.load();
-  return file.accounts.map(migrate);
+  const file = await loadFile();
+  return file.accounts;
 }
 
 export async function getAccount(id: string): Promise<Account | undefined> {
@@ -47,28 +78,69 @@ export async function getAccount(id: string): Promise<Account | undefined> {
   return accounts.find((a) => a.id === id);
 }
 
+export async function listGroups(): Promise<ProjectGroup[]> {
+  const file = await loadFile();
+  return [...file.groups].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function resolveGroupAssignment(input: { groupId?: string | null; newGroupName?: string }): Promise<string | undefined> {
+  const file = await loadFile();
+  const newGroupName = input.newGroupName;
+
+  if (newGroupName !== undefined) {
+    const name = newGroupName.trim();
+    if (name === "") {
+      throw new Error("Group name is required.");
+    }
+
+    const existing = file.groups.find((group) => group.name.toLowerCase() === name.toLowerCase());
+    if (existing) return existing.id;
+
+    const group: ProjectGroup = {
+      id: randomUUID(),
+      name,
+      createdAt: new Date().toISOString(),
+    };
+    file.groups.push(group);
+    await saveFile(file);
+    return group.id;
+  }
+
+  if (input.groupId === null || input.groupId === undefined) return undefined;
+
+  const groupId = input.groupId.trim();
+  if (groupId === "") {
+    throw new Error("Group id is required.");
+  }
+  if (!file.groups.some((group) => group.id === groupId)) {
+    throw new Error(`Group not found: ${groupId}`);
+  }
+  return groupId;
+}
+
 export async function addAccount(account: Account): Promise<Account> {
-  const accounts = await listAccounts();
-  accounts.push(account);
-  await store.save({ accounts });
+  const file = await loadFile();
+  file.accounts.push(account);
+  await saveFile(file);
   return account;
 }
 
 export async function updateAccount(id: string, patch: Partial<Account>): Promise<Account> {
-  const accounts = await listAccounts();
-  const index = accounts.findIndex((a) => a.id === id);
+  const file = await loadFile();
+  const index = file.accounts.findIndex((a) => a.id === id);
   if (index === -1) {
     throw new Error(`Account not found: ${id}`);
   }
   // Preserve the discriminant `provider` and `id`.
-  const merged = { ...accounts[index], ...patch, id, provider: accounts[index].provider } as Account;
-  accounts[index] = merged;
-  await store.save({ accounts });
+  const merged = { ...file.accounts[index], ...patch, id, provider: file.accounts[index].provider } as Account;
+  if ("groupId" in patch && patch.groupId === undefined) delete merged.groupId;
+  file.accounts[index] = merged;
+  await saveFile(pruneUnusedGroups(file));
   return merged;
 }
 
 export async function removeAccount(id: string): Promise<void> {
-  const accounts = await listAccounts();
-  const next = accounts.filter((a) => a.id !== id);
-  await store.save({ accounts: next });
+  const file = await loadFile();
+  file.accounts = file.accounts.filter((a) => a.id !== id);
+  await saveFile(pruneUnusedGroups(file));
 }

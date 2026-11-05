@@ -7,12 +7,10 @@ Native macOS menu bar and dashboard app for monitoring CI/CD and ops activity ac
 Before running the app locally, install or verify these dependencies:
 
 - **macOS**: this is a native macOS app built on the Glaze app platform.
+- **Glaze macOS app**: install the Glaze desktop app and import the project file described below.
 - **Node.js 24 or newer**: `package.json` requires `node >=24`.
 - **npm 11**: the lockfile was generated for npm 11. The project declares `npm@11.11.0`.
-- **Glaze SDK / CLI**: local scripts call `node glaze.ts ...`, which resolves the Glaze CLI from one of these paths:
-  - `$HOME/Library/Application Support/app.glaze.macos.main/sdk/current/@glaze/core/cli/glaze.js`
-  - `../glaze-core/cli/glaze.js`
-  - `../../../sdk/current/@glaze/core/cli/glaze.js`
+- **Glaze project file**: `Observability Monitor.glaze` must be present in the repo root and imported into the Glaze macOS app before running the native app.
 - **Xcode Command Line Tools**: recommended for local macOS app builds and native packaging tasks.
 
 Check your local versions:
@@ -31,6 +29,8 @@ xcode-select --install
 
 ## Install
 
+Before installing npm dependencies, copy `Observability Monitor.glaze` into this repository root and import it from the Glaze macOS app. The imported Glaze app provides the local project/runtime context that native development expects.
+
 Install dependencies from the repo root:
 
 ```bash
@@ -41,11 +41,15 @@ Use `--include=dev` because local build, type-check, lint, and formatting comman
 
 ## Run Locally
 
-Run the full native app:
+Start the full dev environment:
 
 ```bash
 npm run dev
 ```
+
+This starts the backend watcher and the renderer dev server, then writes `.devserverhost` for the Glaze desktop host. Open or reload the imported `Observability Monitor.glaze` project from the Glaze macOS app while `npm run dev` is running to attach the native host and show the app window.
+
+If you run `npm run dev` from a plain terminal without the Glaze host attached, the servers can still start, but native calls such as theme, screen, menu, tray, and window APIs may time out in the logs.
 
 Run only the renderer in a browser-based dev server for faster UI work when native backend/IPC behavior is not needed:
 
@@ -69,22 +73,11 @@ Format code when needed:
 npm run format
 ```
 
-## Glaze CLI Troubleshooting
+## Glaze Project Troubleshooting
 
-If a script fails with:
+If scripts cannot find the Glaze CLI or native APIs time out while running `npm run dev`, first confirm that `Observability Monitor.glaze` exists in the repo root and has been imported/opened in the Glaze macOS app.
 
-```text
-[glaze] CLI not found. Searched:
-  - /Users/you/Library/Application Support/app.glaze.macos.main/sdk/current/@glaze/core/cli/glaze.js
-  - /path/to/glaze-core/cli/glaze.js
-  - /path/to/sdk/current/@glaze/core/cli/glaze.js
-```
-
-then the Glaze SDK is not present at a path expected by `glaze.ts`. The normal multi-developer location is under each developer's home directory at `$HOME/Library/Application Support/app.glaze.macos.main/sdk/current/@glaze/core/cli/glaze.js`. Fix this by installing or linking the SDK so one of the searched paths exists, or update `glaze.ts` only if the team has agreed on a new local SDK layout.
-
-Do not install or modify `@glaze/core` inside this app as a normal npm dependency. The SDK is treated as a local, version-pinned platform dependency.
-
-When `glaze.ts` finds the SDK, it creates a local `.glaze-sdk` symlink so TypeScript can resolve `@glaze/core/*` types through a stable repo-local path. This symlink is ignored by git and can be deleted safely; it will be recreated on the next `npm run ...` command that goes through `glaze.ts`.
+Do not install or modify `@glaze/core` inside this app as a normal npm dependency. The SDK is treated as a local, version-pinned platform dependency managed by Glaze.
 
 ## Runtime Data
 
